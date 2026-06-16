@@ -1,0 +1,3 @@
+# Operacion de campo sin conexion desde la primera version
+
+La primera version debe permitir capturar bitacoras, fotografias, controles de calidad, inspecciones, avances, movimientos de material y registros de seguridad aun cuando la obra no tenga conexion. Esta capacidad condiciona la arquitectura futura, pero se adopta porque esos registros nacen en campo y no pueden depender de conectividad estable; la sincronizacion posterior debe conservar autoria, fecha y evidencia. Cuando existan cambios concurrentes, se conservaran ambas versiones hasta una conciliacion autorizada, sin aplicar una regla automatica de ultimo cambio.
