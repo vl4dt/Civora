@@ -467,6 +467,9 @@ Elevacion automatica de una alerta a una autoridad superior segun su severidad y
 **Rol de trabajo**:
 Conjunto general de responsabilidades que una persona puede ejercer, como direccion, diseno, presupuesto, campo, calidad, seguridad, compras o finanzas.
 
+**Rol MVP**:
+Rol interno minimo para operar el MVP, como administrador, director de proyecto, presupuesto, calidad, finanzas o consulta.
+
 **Asignacion de proyecto**:
 Vinculo que otorga a una persona un rol y alcance de acceso especificos dentro de un proyecto determinado.
 _Avoid_: Rol global
@@ -696,6 +699,12 @@ Conjunto inicial del sistema enfocado en proyectos, fases, roles, fichas de rend
 
 **Alcance de segunda version**:
 Evolucion posterior del sistema que incluye portal del proveedor, gestion de equipos y maquinaria, asistencia individual, habilitacion de trabajadores, integraciones contables, gestion legal de contratos, firma electronica avanzada e importacion automatica de comunicaciones.
+
+**Product Owner**:
+Responsable propietario del producto que valida funcionalmente que cada entrega representa la forma de trabajo de RS Ingenieria.
+
+**Validacion funcional**:
+Confirmacion del Product Owner de que una entrega cumple el resultado esperado en un caso de uso del proyecto piloto, mas alla de funcionar tecnicamente.
 
 **Control basico de diseno**:
 Gestion incluida en la primera version para entregables, revisiones, aprobacion tecnica, aceptacion del cliente, coordinacion e impacto sobre presupuesto y construccion, sin cubrir produccion avanzada de diseno.
