@@ -10,11 +10,29 @@ Thumbs.db
 !.env.example
 
 # Dependencies/build output
+/_build/
+/deps/
+/doc/
+.fetch
+*.ez
+civora-*.tar
 node_modules/
+/assets/node_modules/
 dist/
 build/
 .next/
 coverage/
+/cover/
+/tmp/
+/priv/static/assets/
+/priv/static/cache_manifest.json
+
+# Local tool caches
+/.hex_home/
+/.mix_home/
+/.codex_phx_scaffold/
 
 # Logs
 *.log
+erl_crash.dump
+npm-debug.log
