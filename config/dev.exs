@@ -1,11 +1,8 @@
 import Config
 
-# Configure your database
+# Configure your database. DATABASE_URL can override the local Compose default.
 config :civora, Civora.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "civora_dev",
+  url: System.get_env("DATABASE_URL", "ecto://postgres:postgres@localhost/civora_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
