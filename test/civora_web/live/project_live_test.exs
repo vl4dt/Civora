@@ -79,6 +79,7 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ "Torre Central"
       assert has_element?(view, "#phase-form")
       assert has_element?(view, ~s|a[href="/projects/#{project.id}/audit"]|)
+      assert has_element?(view, ~s|a[href="/projects/#{project.id}/work-items"]|)
 
       html =
         view
@@ -132,6 +133,73 @@ defmodule CivoraWeb.ProjectLiveTest do
 
       assert has_element?(view, "#phase-form")
       assert Projects.authorized?(Scope.for_user(director), project, :manage_project)
+    end
+  end
+
+  describe "project work items" do
+    test "administrator creates, lists, and opens a work item", %{conn: conn, scope: scope} do
+      project = project_fixture(scope, %{name: "Edificio Sur"})
+      phase = project_phase_fixture(scope, project, %{name: "Obra gris"})
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items")
+      assert html =~ "Sin partidas registradas"
+      assert has_element?(view, "#work-item-form")
+
+      html =
+        view
+        |> form("#work-item-form",
+          work_item: %{
+            project_phase_id: phase.id,
+            description: "Losa de entrepiso",
+            unit: "m2",
+            quantity: "84.25"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Partida agregada correctamente."
+      assert html =~ "Losa de entrepiso"
+      [item] = Civora.Repo.all(Civora.Budget.WorkItem)
+
+      {:ok, _show, detail} = live(conn, ~p"/projects/#{project}/work-items/#{item}")
+      assert detail =~ "Losa de entrepiso"
+      assert detail =~ "Obra gris"
+      assert detail =~ "84.2500"
+      assert detail =~ "m2"
+    end
+
+    test "budget members can create and read-only members can only inspect", %{scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+
+      budget_user = user_fixture()
+      assignment_fixture(scope, project, budget_user, :presupuesto)
+      budget_conn = build_conn() |> log_in_user(budget_user)
+      {:ok, budget_view, _html} = live(budget_conn, ~p"/projects/#{project}/work-items")
+      assert has_element?(budget_view, "#work-item-form")
+
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+      item = work_item_fixture(scope, project, phase)
+      viewer_conn = build_conn() |> log_in_user(viewer)
+      {:ok, viewer_view, html} = live(viewer_conn, ~p"/projects/#{project}/work-items")
+      assert html =~ item.description
+      refute has_element?(viewer_view, "#work-item-form")
+    end
+
+    test "users outside the project cannot list or open work items", %{scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      item = work_item_fixture(scope, project, phase)
+      outsider_conn = build_conn() |> log_in_user(user_fixture())
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(outsider_conn, ~p"/projects/#{project}/work-items")
+      end
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(outsider_conn, ~p"/projects/#{project}/work-items/#{item}")
+      end
     end
   end
 

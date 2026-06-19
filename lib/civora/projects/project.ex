@@ -12,6 +12,7 @@ defmodule Civora.Projects.Project do
 
     has_many :assignments, Civora.Projects.ProjectAssignment
     has_many :phases, Civora.Projects.ProjectPhase
+    has_many :work_items, Civora.Budget.WorkItem
 
     timestamps(type: :utc_datetime)
   end

@@ -12,6 +12,7 @@ defmodule Civora.Projects.ProjectPhase do
     field :description, :string
 
     belongs_to :project, Project
+    has_many :work_items, Civora.Budget.WorkItem
 
     timestamps(type: :utc_datetime)
   end

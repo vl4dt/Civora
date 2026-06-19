@@ -36,4 +36,17 @@ defmodule Civora.ProjectsFixtures do
     {:ok, assignment} = Projects.assign_user(scope, project, user, role)
     assignment
   end
+
+  def work_item_fixture(scope, project, phase, attrs \\ %{}) do
+    attrs =
+      Enum.into(attrs, %{
+        project_phase_id: phase.id,
+        unit: "m2",
+        quantity: "25.5000",
+        description: "Partida #{System.unique_integer([:positive])}"
+      })
+
+    {:ok, item} = Civora.Budget.create_work_item(scope, project, attrs)
+    item
+  end
 end
