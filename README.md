@@ -58,6 +58,9 @@ en `docs/PROJECT_ROLES.md`.
 El registro inalterable y los contratos de eventos criticos estan documentados
 en `docs/AUDIT.md`.
 
+Las partidas de obra, sus invariantes y permisos estan documentadas en
+`docs/WORK_ITEMS.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

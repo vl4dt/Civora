@@ -49,11 +49,18 @@ defmodule CivoraWeb.ProjectLive.Show do
 
           <div class="flex shrink-0 items-center gap-3">
             <.link
+              navigate={~p"/projects/#{@project}/work-items"}
+              class="btn btn-ghost btn-sm"
+            >
+              <.icon name="hero-clipboard-document-list" class="size-4" /> Partidas
+            </.link>
+            <.link
               navigate={~p"/projects/#{@project}/audit"}
               class="btn btn-ghost btn-sm"
             >
               <.icon name="hero-clock" class="size-4" /> Auditoria
             </.link>
+
             <span class="badge badge-outline">
               {Projects.status_label(@project.status)}
             </span>

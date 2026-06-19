@@ -17,6 +17,7 @@ defmodule Civora.Audit do
     project_assignment_created: "Usuario asignado",
     project_assignment_role_changed: "Rol actualizado",
     project_assignment_removed: "Asignacion retirada",
+    work_item_created: "Partida creada",
     budget_approved: "Presupuesto aprobado",
     quality_accepted: "Calidad aceptada",
     estimate_created: "Estimacion creada"
