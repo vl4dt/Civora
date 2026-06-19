@@ -78,6 +78,7 @@ defmodule CivoraWeb.ProjectLiveTest do
 
       assert html =~ "Torre Central"
       assert has_element?(view, "#phase-form")
+      assert has_element?(view, ~s|a[href="/projects/#{project.id}/audit"]|)
 
       html =
         view
@@ -131,6 +132,35 @@ defmodule CivoraWeb.ProjectLiveTest do
 
       assert has_element?(view, "#phase-form")
       assert Projects.authorized?(Scope.for_user(director), project, :manage_project)
+    end
+  end
+
+  describe "project audit" do
+    test "members can inspect immutable project events", %{
+      conn: conn,
+      scope: scope,
+      user: user
+    } do
+      project = project_fixture(scope, %{name: "Proyecto auditado"})
+      _phase = project_phase_fixture(scope, project, %{name: "Diseno inicial"})
+
+      {:ok, _view, html} = live(conn, ~p"/projects/#{project}/audit")
+
+      assert html =~ "Auditoria"
+      assert html =~ "Proyecto creado"
+      assert html =~ "Fase creada"
+      assert html =~ user.email
+      refute html =~ "Eliminar"
+    end
+
+    test "users outside the project cannot inspect its audit", %{scope: owner_scope} do
+      project = project_fixture(owner_scope)
+      outsider = user_fixture()
+      outsider_conn = build_conn() |> log_in_user(outsider)
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(outsider_conn, ~p"/projects/#{project}/audit")
+      end
     end
   end
 end

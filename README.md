@@ -55,6 +55,9 @@ documentadas en `docs/AUTHENTICATION.md`.
 Los roles MVP, asignaciones y permisos iniciales por proyecto estan documentados
 en `docs/PROJECT_ROLES.md`.
 
+El registro inalterable y los contratos de eventos criticos estan documentados
+en `docs/AUDIT.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

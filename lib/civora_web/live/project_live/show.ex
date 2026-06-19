@@ -39,14 +39,25 @@ defmodule CivoraWeb.ProjectLive.Show do
         <div class="mt-6 flex flex-col gap-5 border-b border-base-300 pb-8 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0">
             <p class="text-sm text-base-content/60">{@project.client_reference}</p>
+
             <h1 class="mt-2 text-3xl font-semibold">{@project.name}</h1>
+
             <p class="mt-3 max-w-3xl text-sm leading-6 text-base-content/70">
               {@project.description}
             </p>
           </div>
-          <span class="badge badge-outline shrink-0">
-            {Projects.status_label(@project.status)}
-          </span>
+
+          <div class="flex shrink-0 items-center gap-3">
+            <.link
+              navigate={~p"/projects/#{@project}/audit"}
+              class="btn btn-ghost btn-sm"
+            >
+              <.icon name="hero-clock" class="size-4" /> Auditoria
+            </.link>
+            <span class="badge badge-outline">
+              {Projects.status_label(@project.status)}
+            </span>
+          </div>
         </div>
       </section>
 
@@ -54,6 +65,7 @@ defmodule CivoraWeb.ProjectLive.Show do
         <div>
           <div class="border-b border-base-300 pb-4">
             <p class="text-sm font-medium text-primary">Alcance contratado</p>
+
             <h2 class="mt-1 text-xl font-semibold">Fases del proyecto</h2>
           </div>
 
@@ -70,16 +82,19 @@ defmodule CivoraWeb.ProjectLive.Show do
           <article :for={phase <- @phases} class="border-b border-base-300 py-5">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <h3 class="font-semibold">{phase.name}</h3>
+
               <span class="badge badge-ghost badge-sm">
                 {Projects.phase_type_label(phase.phase_type)}
               </span>
             </div>
+
             <p class="mt-2 text-sm leading-6 text-base-content/65">{phase.description}</p>
           </article>
         </div>
 
         <aside :if={@can_manage_project} class="border-l-0 border-base-300 lg:border-l lg:pl-8">
           <h2 class="text-base font-semibold">Agregar fase</h2>
+
           <.form
             for={@phase_form}
             id="phase-form"
