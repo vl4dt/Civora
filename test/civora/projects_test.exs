@@ -31,7 +31,12 @@ defmodule Civora.ProjectsTest do
       scope = Scope.for_user(user)
 
       assert {:ok, %Project{} = project} =
-               Projects.create_project(scope, %{name: "Hospital Central"})
+               Projects.create_project(scope, %{
+                 name: "Hospital Central",
+                 client_reference: "Secretaria de Salud",
+                 status: :planificacion,
+                 description: "Ampliacion del hospital"
+               })
 
       assert %ProjectAssignment{role: :administrador, user_id: user_id} =
                Repo.get_by(ProjectAssignment, project_id: project.id)
@@ -45,6 +50,96 @@ defmodule Civora.ProjectsTest do
       assert {:error, changeset} = Projects.create_project(scope, %{name: ""})
       assert %{name: ["can't be blank"]} = errors_on(changeset)
       assert Repo.aggregate(ProjectAssignment, :count) == 0
+    end
+  end
+
+  describe "project phases" do
+    setup do
+      administrator = user_fixture()
+      scope = Scope.for_user(administrator)
+      project = project_fixture(scope)
+
+      %{administrator_scope: scope, project: project}
+    end
+
+    test "exposes project states and canonical phase types" do
+      assert Projects.available_statuses() == [
+               :planificacion,
+               :activo,
+               :pausado,
+               :cerrado,
+               :cancelado
+             ]
+
+      assert Projects.available_phase_types() == [
+               :diseno,
+               :presupuesto,
+               :planificacion,
+               :construccion,
+               :supervision,
+               :cierre
+             ]
+    end
+
+    test "administrator creates a phase that belongs to the project", %{
+      administrator_scope: scope,
+      project: project
+    } do
+      assert {:ok, phase} =
+               Projects.create_project_phase(scope, project, %{
+                 name: "Construccion principal",
+                 phase_type: :construccion,
+                 description: "Ejecucion del alcance principal"
+               })
+
+      assert phase.project_id == project.id
+      assert {:ok, [^phase]} = Projects.list_project_phases(scope, project)
+    end
+
+    test "project directors can create phases", %{
+      administrator_scope: administrator_scope,
+      project: project
+    } do
+      director = user_fixture()
+      assignment_fixture(administrator_scope, project, director, :director_proyecto)
+      director_scope = Scope.for_user(director)
+
+      assert {:ok, _phase} =
+               Projects.create_project_phase(director_scope, project, %{
+                 name: "Supervision tecnica",
+                 phase_type: :supervision,
+                 description: "Inspeccion del proyecto"
+               })
+    end
+
+    test "other roles cannot create phases", %{
+      administrator_scope: administrator_scope,
+      project: project
+    } do
+      viewer = user_fixture()
+      assignment_fixture(administrator_scope, project, viewer, :consulta)
+
+      assert {:error, :unauthorized} =
+               Projects.create_project_phase(Scope.for_user(viewer), project, %{
+                 name: "Fase no autorizada",
+                 phase_type: :diseno,
+                 description: "No debe persistirse"
+               })
+    end
+
+    test "phase names are unique inside a project", %{
+      administrator_scope: scope,
+      project: project
+    } do
+      attrs = %{
+        name: "Construccion",
+        phase_type: :construccion,
+        description: "Primera fase"
+      }
+
+      assert {:ok, _phase} = Projects.create_project_phase(scope, project, attrs)
+      assert {:error, changeset} = Projects.create_project_phase(scope, project, attrs)
+      assert "has already been taken" in errors_on(changeset).project_id
     end
   end
 
