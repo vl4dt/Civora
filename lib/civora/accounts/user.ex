@@ -9,6 +9,8 @@ defmodule Civora.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
+    has_many :project_assignments, Civora.Projects.ProjectAssignment
+
     timestamps(type: :utc_datetime)
   end
 

@@ -52,6 +52,9 @@ documentadas en `docs/R2_STORAGE.md`.
 La autenticacion interna, creacion de usuarios y recuperacion de acceso estan
 documentadas en `docs/AUTHENTICATION.md`.
 
+Los roles MVP, asignaciones y permisos iniciales por proyecto estan documentados
+en `docs/PROJECT_ROLES.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.
