@@ -20,6 +20,12 @@ defmodule CivoraWeb.Router do
     get "/", PageController, :home
   end
 
+  scope "/", CivoraWeb do
+    pipe_through :api
+
+    get "/health", PageController, :health
+  end
+
   # Other scopes may use custom stacks.
   # scope "/api", CivoraWeb do
   #   pipe_through :api
