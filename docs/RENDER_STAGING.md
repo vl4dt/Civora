@@ -13,6 +13,10 @@ un servicio web Phoenix y una base PostgreSQL 16 administrada en la misma region
 | `POOL_SIZE` | `5` | Limita conexiones del servicio de staging. |
 | `RENDER_EXTERNAL_HOSTNAME` | Proporcionada por Render | Configura el host publico de Phoenix. |
 | `PORT` | Proporcionada por Render | Puerto HTTP donde escucha Phoenix. |
+| `R2_ENDPOINT` | Definida en Render | Endpoint S3 de Cloudflare R2. |
+| `R2_BUCKET` | Definida en Render | Bucket privado de staging. |
+| `R2_ACCESS_KEY_ID` | Definida en Render | Identificador del token R2. |
+| `R2_SECRET_ACCESS_KEY` | Definida en Render | Secreto del token R2. |
 
 `PHX_HOST` puede definirse manualmente para usar un dominio personalizado. Si
 existe, tiene prioridad sobre `RENDER_EXTERNAL_HOSTNAME`.
