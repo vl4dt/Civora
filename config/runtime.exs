@@ -53,6 +53,10 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  if byte_size(secret_key_base) < 64 do
+    raise "SECRET_KEY_BASE must be at least 64 bytes; generate one with: mix phx.gen.secret"
+  end
+
   host =
     System.get_env("PHX_HOST") ||
       System.get_env("RENDER_EXTERNAL_HOSTNAME") ||
