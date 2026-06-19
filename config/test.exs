@@ -5,11 +5,14 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+test_database_url =
+  System.get_env(
+    "TEST_DATABASE_URL",
+    "ecto://postgres:postgres@localhost/civora_test#{System.get_env("MIX_TEST_PARTITION")}"
+  )
+
 config :civora, Civora.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "civora_test#{System.get_env("MIX_TEST_PARTITION")}",
+  url: test_database_url,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 

@@ -9,23 +9,35 @@ El MVP usa Phoenix/Elixir con PostgreSQL, de acuerdo con `docs/adr/0004-stack-te
 ### Requisitos locales
 
 - Elixir `1.20.1-otp-29` gestionado con Mise.
-- PostgreSQL local para los pasos con base de datos.
+- Docker Desktop con Docker Compose para PostgreSQL 16.
 
 ### Comandos basicos
 
 ```powershell
 mise install
 mix deps.get
-mix ecto.create
+docker compose up -d db
+mix ecto.setup
 mix phx.server
 ```
 
 La aplicacion queda disponible en `http://localhost:4000`.
 
+El servicio local usa `postgres:postgres@localhost/civora_dev`. Para usar otra
+instancia, define `DATABASE_URL` con formato
+`ecto://USUARIO:CLAVE@HOST/BASE_DE_DATOS` antes de ejecutar Mix.
+
 Para ejecutar pruebas:
 
 ```powershell
 mix test
+```
+
+Las pruebas crean y migran `civora_test` automaticamente. `TEST_DATABASE_URL`
+permite cambiar esa conexion sin afectar desarrollo. Para detener PostgreSQL:
+
+```powershell
+docker compose down
 ```
 
 ## Documentacion inicial
@@ -36,4 +48,4 @@ mix test
 
 ## Estado
 
-Aplicacion Phoenix base creada para el MVP. La siguiente configuracion funcional de base de datos y Ecto se trabaja en RS-13.
+Aplicacion Phoenix base con PostgreSQL y Ecto configurados para desarrollo local.
