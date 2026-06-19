@@ -49,6 +49,9 @@ las variables y los comandos de despliegue estan documentados en
 La configuracion y API base de almacenamiento privado en Cloudflare R2 estan
 documentadas en `docs/R2_STORAGE.md`.
 
+La autenticacion interna, creacion de usuarios y recuperacion de acceso estan
+documentadas en `docs/AUTHENTICATION.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

@@ -1,6 +1,8 @@
 defmodule CivoraWeb.Router do
   use CivoraWeb, :router
 
+  import CivoraWeb.UserAuth
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -8,16 +10,11 @@ defmodule CivoraWeb.Router do
     plug :put_root_layout, html: {CivoraWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_user
   end
 
   pipeline :api do
     plug :accepts, ["json"]
-  end
-
-  scope "/", CivoraWeb do
-    pipe_through :browser
-
-    get "/", PageController, :home
   end
 
   scope "/", CivoraWeb do
@@ -46,5 +43,34 @@ defmodule CivoraWeb.Router do
       live_dashboard "/dashboard", metrics: CivoraWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  ## Authentication routes
+
+  scope "/", CivoraWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/", PageController, :home
+
+    live_session :require_authenticated_user,
+      on_mount: [{CivoraWeb.UserAuth, :require_authenticated}] do
+      live "/users/settings", UserLive.Settings, :edit
+      live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+    end
+
+    post "/users/update-password", UserSessionController, :update_password
+  end
+
+  scope "/", CivoraWeb do
+    pipe_through [:browser]
+
+    live_session :current_user,
+      on_mount: [{CivoraWeb.UserAuth, :mount_current_scope}] do
+      live "/users/log-in", UserLive.Login, :new
+      live "/users/log-in/:token", UserLive.Confirmation, :new
+    end
+
+    post "/users/log-in", UserSessionController, :create
+    delete "/users/log-out", UserSessionController, :delete
   end
 end
