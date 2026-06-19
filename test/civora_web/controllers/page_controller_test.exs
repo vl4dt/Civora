@@ -10,7 +10,7 @@ defmodule CivoraWeb.PageControllerTest do
 
   test "GET / renders the internal dashboard for authenticated users", %{conn: conn} do
     conn = conn |> log_in_user(user_fixture()) |> get(~p"/")
-    assert html_response(conn, 200) =~ "Panel de proyectos"
+    assert html_response(conn, 200) =~ "Proyectos"
   end
 
   test "GET /health", %{conn: conn} do

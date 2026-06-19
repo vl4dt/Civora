@@ -50,10 +50,11 @@ defmodule CivoraWeb.Router do
   scope "/", CivoraWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    get "/", PageController, :home
-
     live_session :require_authenticated_user,
       on_mount: [{CivoraWeb.UserAuth, :require_authenticated}] do
+      live "/", ProjectLive.Index, :index
+      live "/projects/new", ProjectLive.New, :new
+      live "/projects/:id", ProjectLive.Show, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
     end

@@ -29,11 +29,11 @@ Los permisos funcionales de presupuesto, calidad y finanzas se agregaran en los
 milestones correspondientes. RS-17 no concede acceso implicito fuera del
 proyecto asignado.
 
-## Limite con RS-18
+## Integracion con proyectos
 
-La tabla `projects` contiene por ahora solamente la identidad y el nombre que
-necesitan las asignaciones. RS-18 ampliara el proyecto con cliente/referencia,
-estado, descripcion, fases y pantallas de administracion.
+La tabla `projects` contiene nombre, cliente/referencia, estado y descripcion.
+Cada proyecto puede tener fases opcionales de diseno, presupuesto,
+planificacion, construccion, supervision y cierre.
 
 Al crear un proyecto mediante `Civora.Projects.create_project/2`, el usuario del
 scope se registra atomicamente como su primer administrador.
