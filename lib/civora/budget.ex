@@ -7,14 +7,61 @@ defmodule Civora.Budget do
 
   alias Civora.Accounts.{Scope, User}
   alias Civora.Audit
-  alias Civora.Budget.WorkItem
+  alias Civora.Budget.{PerformanceSheet, PerformanceSheetResource, WorkItem}
   alias Civora.Projects
   alias Civora.Projects.{Project, ProjectPhase}
+  alias Civora.Projects.ProjectAssignment
   alias Civora.Repo
 
   def change_work_item(%WorkItem{} = work_item, attrs \\ %{}) do
     WorkItem.changeset(work_item, attrs)
   end
+
+  def change_performance_sheet(%PerformanceSheet{} = sheet, attrs \\ %{}) do
+    PerformanceSheet.changeset(sheet, attrs)
+  end
+
+  def list_performance_sheets(%Scope{user: %User{}}) do
+    from(s in PerformanceSheet,
+      preload: :resources,
+      order_by: [asc: s.name, asc: s.id]
+    )
+    |> Repo.all()
+  end
+
+  def get_performance_sheet(%Scope{user: %User{}}, id) do
+    case Repo.one(from(s in PerformanceSheet, where: s.id == ^id, preload: :resources)) do
+      %PerformanceSheet{} = sheet -> {:ok, sheet}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def create_performance_sheet(%Scope{user: %User{}} = scope, attrs) do
+    with true <- can_manage_performance_sheets?(scope) do
+      %PerformanceSheet{}
+      |> PerformanceSheet.changeset(attrs)
+      |> Repo.insert()
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def can_manage_performance_sheets?(%Scope{user: %User{id: user_id}}) do
+    Repo.exists?(
+      from(a in ProjectAssignment,
+        where:
+          a.user_id == ^user_id and
+            a.role in [:administrador, :director_proyecto, :presupuesto]
+      )
+    )
+  end
+
+  def can_manage_performance_sheets?(_scope), do: false
+
+  def resource_categories, do: PerformanceSheetResource.categories()
+
+  def resource_category_label(:material), do: "Material"
+  def resource_category_label(:labor), do: "Mano de obra"
 
   def list_work_items(%Scope{} = scope, %Project{} = project) do
     with true <- Projects.authorized?(scope, project, :view) do

@@ -49,4 +49,22 @@ defmodule Civora.ProjectsFixtures do
     {:ok, item} = Civora.Budget.create_work_item(scope, project, attrs)
     item
   end
+
+  def performance_sheet_fixture(scope, attrs \\ %{}) do
+    attrs =
+      Enum.into(attrs, %{
+        name: "Performance sheet #{System.unique_integer([:positive])}",
+        description: "Ficha reutilizable para pruebas automatizadas",
+        unit: "m2",
+        productivity: "18.5000",
+        waste_percentage: "5.0000",
+        resources: [
+          %{category: :material, name: "Bloque", unit: "unidad", quantity: "12.5"},
+          %{category: :labor, name: "Albanil", unit: "jornal", quantity: "0.75"}
+        ]
+      })
+
+    {:ok, sheet} = Civora.Budget.create_performance_sheet(scope, attrs)
+    sheet
+  end
 end

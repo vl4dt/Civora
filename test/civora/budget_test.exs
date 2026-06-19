@@ -7,7 +7,7 @@ defmodule Civora.BudgetTest do
   alias Civora.Accounts.Scope
   alias Civora.Audit.AuditEvent
   alias Civora.Budget
-  alias Civora.Budget.WorkItem
+  alias Civora.Budget.{PerformanceSheet, WorkItem}
   alias Civora.Repo
 
   setup do
@@ -113,5 +113,118 @@ defmodule Civora.BudgetTest do
       assert event.new_state["unit"] == "m2"
       assert event.new_state["project_phase_id"] == context.phase.id
     end
+  end
+
+  describe "performance sheets" do
+    test "creates a reusable sheet with resources and no project dependency", context do
+      assert {:ok, %PerformanceSheet{} = sheet} =
+               Budget.create_performance_sheet(context.scope, %{
+                 name: "Muro de bloque",
+                 description: "Rendimiento estandar para muro reforzado",
+                 unit: "m2",
+                 productivity: "20.0000",
+                 waste_percentage: "7.5000",
+                 resources: [
+                   %{
+                     category: "material",
+                     name: "Bloque 6 pulgadas",
+                     unit: "unidad",
+                     quantity: "12.5"
+                   },
+                   %{category: "labor", name: "Albanil", unit: "jornal", quantity: "0.8"}
+                 ]
+               })
+
+      refute Map.has_key?(sheet, :project_id)
+      assert sheet.unit == "m2"
+      assert Decimal.equal?(sheet.productivity, Decimal.new("20"))
+      assert Enum.map(sheet.resources, & &1.category) == [:material, :labor]
+
+      assert [listed] = Budget.list_performance_sheets(context.scope)
+      assert listed.id == sheet.id
+      assert {:ok, fetched} = Budget.get_performance_sheet(context.scope, sheet.id)
+      assert length(fetched.resources) == 2
+    end
+
+    test "budget-capable users manage the library from any project", context do
+      budget_user = user_fixture()
+      assignment_fixture(context.scope, context.project, budget_user, :presupuesto)
+      budget_scope = Scope.for_user(budget_user)
+
+      assert Budget.can_manage_performance_sheets?(budget_scope)
+
+      assert {:ok, %PerformanceSheet{}} =
+               Budget.create_performance_sheet(budget_scope, valid_performance_sheet_attrs())
+    end
+
+    test "internal users can read but cannot create without a budget-capable assignment",
+         context do
+      viewer_scope = user_fixture() |> Scope.for_user()
+      sheet = performance_sheet_fixture(context.scope)
+
+      refute Budget.can_manage_performance_sheets?(viewer_scope)
+      assert [listed] = Budget.list_performance_sheets(viewer_scope)
+      assert listed.id == sheet.id
+      assert {:ok, fetched} = Budget.get_performance_sheet(viewer_scope, sheet.id)
+      assert fetched.id == sheet.id
+      assert Enum.map(fetched.resources, & &1.name) == ["Bloque", "Albanil"]
+
+      assert {:error, :unauthorized} =
+               Budget.create_performance_sheet(viewer_scope, valid_performance_sheet_attrs())
+    end
+
+    test "requires resources and validates productivity, waste, and resource quantities",
+         context do
+      attrs =
+        valid_performance_sheet_attrs(%{
+          productivity: "0",
+          waste_percentage: "101",
+          resources: [%{category: "material", name: "Cemento", unit: "bolsa", quantity: "0"}]
+        })
+
+      assert {:error, changeset} = Budget.create_performance_sheet(context.scope, attrs)
+      errors = errors_on(changeset)
+      assert "must be greater than 0" in errors.productivity
+      assert "must be less than or equal to 100" in errors.waste_percentage
+      assert %{resources: [%{quantity: ["must be greater than 0"]}]} = errors
+
+      assert {:error, empty_changeset} =
+               Budget.create_performance_sheet(
+                 context.scope,
+                 valid_performance_sheet_attrs(%{resources: []})
+               )
+
+      assert "can't be blank" in errors_on(empty_changeset).resources
+    end
+
+    test "ignores unused blank resource rows from the LiveView form", context do
+      attrs =
+        valid_performance_sheet_attrs(%{
+          resources: %{
+            "0" => %{category: "material", name: "Cemento", unit: "bolsa", quantity: "0.25"},
+            "1" => %{category: "", name: "", unit: "", quantity: ""},
+            "2" => %{category: "", name: "", unit: "", quantity: ""}
+          }
+        })
+
+      assert {:ok, sheet} = Budget.create_performance_sheet(context.scope, attrs)
+      assert [%{name: "Cemento"}] = sheet.resources
+    end
+  end
+
+  defp valid_performance_sheet_attrs(overrides \\ %{}) do
+    Map.merge(
+      %{
+        name: "Ficha #{System.unique_integer([:positive])}",
+        description: "Ficha reutilizable de rendimiento",
+        unit: "m2",
+        productivity: "10",
+        waste_percentage: "5",
+        resources: [
+          %{category: "material", name: "Cemento", unit: "bolsa", quantity: "0.25"}
+        ]
+      },
+      overrides
+    )
   end
 end
