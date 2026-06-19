@@ -46,6 +46,9 @@ La configuracion reproducible de staging vive en `render.yaml`. El procedimiento
 las variables y los comandos de despliegue estan documentados en
 `docs/RENDER_STAGING.md`.
 
+La configuracion y API base de almacenamiento privado en Cloudflare R2 estan
+documentadas en `docs/R2_STORAGE.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

@@ -23,6 +23,12 @@ end
 config :civora, CivoraWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+config :civora, Civora.Storage.R2,
+  endpoint: System.get_env("R2_ENDPOINT"),
+  bucket: System.get_env("R2_BUCKET"),
+  access_key_id: System.get_env("R2_ACCESS_KEY_ID"),
+  secret_access_key: System.get_env("R2_SECRET_ACCESS_KEY")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
