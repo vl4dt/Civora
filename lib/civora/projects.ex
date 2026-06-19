@@ -2,13 +2,13 @@ defmodule Civora.Projects do
   @moduledoc """
   Project membership and project-scoped authorization.
 
-  RS-17 introduces only the project identity needed to anchor assignments.
   Projects include their basic commercial identity and optional contracted phases.
   """
 
   import Ecto.Query, warn: false
 
   alias Civora.Accounts.{Scope, User}
+  alias Civora.Audit
   alias Civora.Projects.{Project, ProjectAssignment, ProjectPhase}
   alias Civora.Repo
 
@@ -66,6 +66,14 @@ defmodule Civora.Projects do
         role: :administrador
       })
     end)
+    |> Ecto.Multi.insert(:audit_event, fn %{project: project} ->
+      Audit.event_changeset(user, project, %{
+        action: :project_created,
+        entity_type: "project",
+        entity_id: project.id,
+        new_state: project_state(project)
+      })
+    end)
     |> Repo.transaction()
     |> case do
       {:ok, %{project: project}} -> {:ok, project}
@@ -112,13 +120,26 @@ defmodule Civora.Projects do
     end
   end
 
-  def create_project_phase(%Scope{} = scope, %Project{} = project, attrs) do
+  def create_project_phase(%Scope{user: %User{} = actor} = scope, %Project{} = project, attrs) do
     with true <- authorized?(scope, project, :manage_project) do
       attrs = put_project_id(attrs, project.id)
 
-      %ProjectPhase{}
-      |> ProjectPhase.changeset(attrs)
-      |> Repo.insert()
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(:phase, ProjectPhase.changeset(%ProjectPhase{}, attrs))
+      |> Ecto.Multi.insert(:audit_event, fn %{phase: phase} ->
+        Audit.event_changeset(actor, project, %{
+          action: :project_phase_created,
+          entity_type: "project_phase",
+          entity_id: phase.id,
+          new_state: phase_state(phase)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{phase: phase}} -> {:ok, phase}
+        {:error, :phase, changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
     else
       false -> {:error, :unauthorized}
     end
@@ -142,24 +163,48 @@ defmodule Civora.Projects do
   end
 
   def assign_user(
-        %Scope{} = scope,
+        %Scope{user: %User{} = actor} = scope,
         %Project{} = project,
         %User{} = user,
         role
       ) do
     with true <- authorized?(scope, project, :manage_assignments) do
-      %ProjectAssignment{}
-      |> ProjectAssignment.changeset(%{project_id: project.id, user_id: user.id, role: role})
-      |> Repo.insert()
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(
+        :assignment,
+        ProjectAssignment.changeset(%ProjectAssignment{}, %{
+          project_id: project.id,
+          user_id: user.id,
+          role: role
+        })
+      )
+      |> Ecto.Multi.insert(:audit_event, fn %{assignment: assignment} ->
+        Audit.event_changeset(actor, project, %{
+          action: :project_assignment_created,
+          entity_type: "project_assignment",
+          entity_id: assignment.id,
+          new_state: assignment_state(assignment)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{assignment: assignment}} -> {:ok, assignment}
+        {:error, :assignment, changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
     else
       false -> {:error, :unauthorized}
     end
   end
 
-  def update_assignment_role(%Scope{} = scope, %ProjectAssignment{} = assignment, role) do
+  def update_assignment_role(
+        %Scope{user: %User{} = actor} = scope,
+        %ProjectAssignment{} = assignment,
+        role
+      ) do
     Repo.transaction(fn ->
       locked_assignment = lock_assignment!(assignment.id)
-      lock_project!(locked_assignment.project_id)
+      project = lock_project!(locked_assignment.project_id)
 
       unless authorized?(scope, locked_assignment.project_id, :manage_assignments) do
         Repo.rollback(:unauthorized)
@@ -169,20 +214,36 @@ defmodule Civora.Projects do
         Repo.rollback(:last_administrator)
       end
 
+      previous_state = assignment_state(locked_assignment)
+
       locked_assignment
       |> ProjectAssignment.role_changeset(%{role: role})
       |> Repo.update()
       |> case do
-        {:ok, updated_assignment} -> updated_assignment
-        {:error, changeset} -> Repo.rollback(changeset)
+        {:ok, updated_assignment} ->
+          insert_audit_event!(actor, project, %{
+            action: :project_assignment_role_changed,
+            entity_type: "project_assignment",
+            entity_id: updated_assignment.id,
+            previous_state: previous_state,
+            new_state: assignment_state(updated_assignment)
+          })
+
+          updated_assignment
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
       end
     end)
   end
 
-  def remove_assignment(%Scope{} = scope, %ProjectAssignment{} = assignment) do
+  def remove_assignment(
+        %Scope{user: %User{} = actor} = scope,
+        %ProjectAssignment{} = assignment
+      ) do
     Repo.transaction(fn ->
       locked_assignment = lock_assignment!(assignment.id)
-      lock_project!(locked_assignment.project_id)
+      project = lock_project!(locked_assignment.project_id)
 
       unless authorized?(scope, locked_assignment.project_id, :manage_assignments) do
         Repo.rollback(:unauthorized)
@@ -192,7 +253,17 @@ defmodule Civora.Projects do
         Repo.rollback(:last_administrator)
       end
 
-      Repo.delete!(locked_assignment)
+      previous_state = assignment_state(locked_assignment)
+      removed_assignment = Repo.delete!(locked_assignment)
+
+      insert_audit_event!(actor, project, %{
+        action: :project_assignment_removed,
+        entity_type: "project_assignment",
+        entity_id: removed_assignment.id,
+        previous_state: previous_state
+      })
+
+      removed_assignment
     end)
   end
 
@@ -263,4 +334,34 @@ defmodule Civora.Projects do
   end
 
   defp last_administrator?(_assignment), do: false
+
+  defp insert_audit_event!(actor, project, attrs) do
+    actor
+    |> Audit.event_changeset(project, attrs)
+    |> Repo.insert!()
+  end
+
+  defp project_state(project) do
+    %{
+      "name" => project.name,
+      "client_reference" => project.client_reference,
+      "status" => to_string(project.status),
+      "description" => project.description
+    }
+  end
+
+  defp phase_state(phase) do
+    %{
+      "name" => phase.name,
+      "phase_type" => to_string(phase.phase_type),
+      "description" => phase.description
+    }
+  end
+
+  defp assignment_state(assignment) do
+    %{
+      "user_id" => assignment.user_id,
+      "role" => to_string(assignment.role)
+    }
+  end
 end
