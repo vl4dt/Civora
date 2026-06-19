@@ -61,6 +61,9 @@ en `docs/AUDIT.md`.
 Las partidas de obra, sus invariantes y permisos estan documentadas en
 `docs/WORK_ITEMS.md`.
 
+La biblioteca reutilizable de fichas de rendimiento esta documentada en
+`docs/PERFORMANCE_SHEETS.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

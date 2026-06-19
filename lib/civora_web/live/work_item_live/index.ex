@@ -44,6 +44,9 @@ defmodule CivoraWeb.WorkItemLive.Index do
           <p class="mt-2 text-sm text-base-content/65">
             Unidades economicas y de control de calidad del proyecto.
           </p>
+          <.link navigate={~p"/performance-sheets"} class="btn btn-ghost btn-sm mt-4">
+            <.icon name="hero-calculator" class="size-4" /> Biblioteca de rendimientos
+          </.link>
         </div>
       </section>
 
