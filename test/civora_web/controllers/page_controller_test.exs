@@ -1,9 +1,16 @@
 defmodule CivoraWeb.PageControllerTest do
   use CivoraWeb.ConnCase
 
-  test "GET /", %{conn: conn} do
+  import Civora.AccountsFixtures
+
+  test "GET / redirects anonymous users to login", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Peace of mind from prototype to production"
+    assert redirected_to(conn) == ~p"/users/log-in"
+  end
+
+  test "GET / renders the internal dashboard for authenticated users", %{conn: conn} do
+    conn = conn |> log_in_user(user_fixture()) |> get(~p"/")
+    assert html_response(conn, 200) =~ "Panel de proyectos"
   end
 
   test "GET /health", %{conn: conn} do

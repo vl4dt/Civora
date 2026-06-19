@@ -35,39 +35,50 @@ defmodule CivoraWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://phoenix.hexdocs.pm/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
+    <header class="border-b border-base-300 bg-base-100 px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4">
+        <.link navigate={~p"/"} class="flex min-w-0 items-center gap-3">
+          <span class="grid size-9 shrink-0 place-items-center bg-primary text-sm font-bold text-primary-content">C</span>
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold leading-4">Civora</span>
+            <span class="block truncate text-xs text-base-content/60">RS Ingenieria</span>
+          </span>
+        </.link>
+
+        <div class="flex min-w-0 items-center gap-2">
+          <span
+            :if={@current_scope}
+            class="hidden max-w-56 truncate text-sm text-base-content/70 sm:block"
+          >
+            {@current_scope.user.email}
+          </span>
+          <.link
+            :if={@current_scope}
+            navigate={~p"/users/settings"}
+            class="btn btn-ghost btn-square"
+            title="Configuracion de cuenta"
+          >
+            <.icon name="hero-cog-6-tooth" class="size-5" />
+          </.link>
+          <.link
+            :if={@current_scope}
+            href={~p"/users/log-out"}
+            method="delete"
+            class="btn btn-ghost btn-square"
+            title="Cerrar sesion"
+          >
+            <.icon name="hero-arrow-right-start-on-rectangle" class="size-5" />
+          </.link>
+          <.theme_toggle />
+        </div>
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+    <main class="px-4 py-10 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-7xl space-y-6">
         {render_slot(@inner_block)}
       </div>
     </main>
-
     <.flash_group flash={@flash} />
     """
   end
@@ -85,9 +96,7 @@ defmodule CivoraWeb.Layouts do
   def flash_group(assigns) do
     ~H"""
     <div id={@id} aria-live="polite">
-      <.flash kind={:info} flash={@flash} />
-      <.flash kind={:error} flash={@flash} />
-
+      <.flash kind={:info} flash={@flash} /> <.flash kind={:error} flash={@flash} />
       <.flash
         id="client-error"
         kind={:error}
@@ -130,7 +139,6 @@ defmodule CivoraWeb.Layouts do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
       <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
-
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
