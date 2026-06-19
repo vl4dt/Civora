@@ -1,0 +1,192 @@
+defmodule Civora.Projects do
+  @moduledoc """
+  Project membership and project-scoped authorization.
+
+  RS-17 introduces only the project identity needed to anchor assignments.
+  Project phases and the complete project model belong to RS-18.
+  """
+
+  import Ecto.Query, warn: false
+
+  alias Civora.Accounts.{Scope, User}
+  alias Civora.Projects.{Project, ProjectAssignment}
+  alias Civora.Repo
+
+  @role_labels %{
+    administrador: "Administrador",
+    director_proyecto: "Director de proyecto",
+    presupuesto: "Presupuesto",
+    calidad: "Calidad",
+    finanzas: "Finanzas",
+    consulta: "Consulta"
+  }
+
+  def available_roles, do: ProjectAssignment.roles()
+  def role_label(role), do: Map.fetch!(@role_labels, role)
+
+  @doc """
+  Creates a project identity and makes its creator the first administrator.
+  """
+  def create_project(%Scope{user: %User{} = user}, attrs) do
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:project, Project.changeset(%Project{}, attrs))
+    |> Ecto.Multi.insert(:assignment, fn %{project: project} ->
+      ProjectAssignment.changeset(%ProjectAssignment{}, %{
+        project_id: project.id,
+        user_id: user.id,
+        role: :administrador
+      })
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{project: project}} -> {:ok, project}
+      {:error, :project, changeset, _changes} -> {:error, changeset}
+      {:error, _operation, reason, _changes} -> {:error, reason}
+    end
+  end
+
+  def list_projects(%Scope{user: %User{id: user_id}}) do
+    from(p in Project,
+      join: a in ProjectAssignment,
+      on: a.project_id == p.id,
+      where: a.user_id == ^user_id,
+      order_by: [asc: p.name]
+    )
+    |> Repo.all()
+  end
+
+  def get_project(%Scope{user: %User{id: user_id}}, project_id) do
+    from(p in Project,
+      join: a in ProjectAssignment,
+      on: a.project_id == p.id,
+      where: p.id == ^project_id and a.user_id == ^user_id
+    )
+    |> Repo.one()
+    |> case do
+      nil -> {:error, :not_found}
+      project -> {:ok, project}
+    end
+  end
+
+  def list_project_assignments(%Scope{} = scope, %Project{} = project) do
+    with true <- authorized?(scope, project, :view) do
+      assignments =
+        from(a in ProjectAssignment,
+          where: a.project_id == ^project.id,
+          join: u in assoc(a, :user),
+          preload: [user: u],
+          order_by: [asc: u.email]
+        )
+        |> Repo.all()
+
+      {:ok, assignments}
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def assign_user(
+        %Scope{} = scope,
+        %Project{} = project,
+        %User{} = user,
+        role
+      ) do
+    with true <- authorized?(scope, project, :manage_assignments) do
+      %ProjectAssignment{}
+      |> ProjectAssignment.changeset(%{project_id: project.id, user_id: user.id, role: role})
+      |> Repo.insert()
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def update_assignment_role(%Scope{} = scope, %ProjectAssignment{} = assignment, role) do
+    Repo.transaction(fn ->
+      locked_assignment = lock_assignment!(assignment.id)
+      lock_project!(locked_assignment.project_id)
+
+      unless authorized?(scope, locked_assignment.project_id, :manage_assignments) do
+        Repo.rollback(:unauthorized)
+      end
+
+      if removing_last_administrator?(locked_assignment, role) do
+        Repo.rollback(:last_administrator)
+      end
+
+      locked_assignment
+      |> ProjectAssignment.role_changeset(%{role: role})
+      |> Repo.update()
+      |> case do
+        {:ok, updated_assignment} -> updated_assignment
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  def remove_assignment(%Scope{} = scope, %ProjectAssignment{} = assignment) do
+    Repo.transaction(fn ->
+      locked_assignment = lock_assignment!(assignment.id)
+      lock_project!(locked_assignment.project_id)
+
+      unless authorized?(scope, locked_assignment.project_id, :manage_assignments) do
+        Repo.rollback(:unauthorized)
+      end
+
+      if last_administrator?(locked_assignment) do
+        Repo.rollback(:last_administrator)
+      end
+
+      Repo.delete!(locked_assignment)
+    end)
+  end
+
+  def authorized?(%Scope{user: %User{id: user_id}}, %Project{id: project_id}, action) do
+    authorized?(%Scope{user: %User{id: user_id}}, project_id, action)
+  end
+
+  def authorized?(%Scope{user: %User{id: user_id}}, project_id, :view) do
+    Repo.exists?(
+      from(a in ProjectAssignment,
+        where: a.project_id == ^project_id and a.user_id == ^user_id
+      )
+    )
+  end
+
+  def authorized?(%Scope{user: %User{id: user_id}}, project_id, :manage_assignments) do
+    Repo.exists?(
+      from(a in ProjectAssignment,
+        where:
+          a.project_id == ^project_id and a.user_id == ^user_id and
+            a.role == :administrador
+      )
+    )
+  end
+
+  def authorized?(_scope, _project, _action), do: false
+
+  defp lock_assignment!(assignment_id) do
+    Repo.one!(from(a in ProjectAssignment, where: a.id == ^assignment_id, lock: "FOR UPDATE"))
+  end
+
+  defp lock_project!(project_id) do
+    Repo.one!(from(p in Project, where: p.id == ^project_id, lock: "FOR UPDATE"))
+  end
+
+  defp removing_last_administrator?(%ProjectAssignment{role: :administrador} = assignment, role)
+       when role != :administrador do
+    last_administrator?(assignment)
+  end
+
+  defp removing_last_administrator?(_assignment, _role), do: false
+
+  defp last_administrator?(%ProjectAssignment{role: :administrador, project_id: project_id}) do
+    Repo.aggregate(
+      from(a in ProjectAssignment,
+        where: a.project_id == ^project_id and a.role == :administrador
+      ),
+      :count
+    ) == 1
+  end
+
+  defp last_administrator?(_assignment), do: false
+end
