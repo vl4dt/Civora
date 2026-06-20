@@ -12,6 +12,9 @@ defmodule Civora.Budget do
     BudgetedPerformanceSheet,
     PerformanceSheet,
     PerformanceSheetResource,
+    ProjectBudget,
+    ProjectBudgetLine,
+    ProjectBudgetLineResource,
     WorkItem
   }
 
@@ -70,6 +73,93 @@ defmodule Civora.Budget do
   def resource_category_label(:material), do: "Material"
   def resource_category_label(:labor), do: "Mano de obra"
 
+  def get_project_budget(%Scope{} = scope, %Project{} = project) do
+    with true <- Projects.authorized?(scope, project, :view) do
+      budget =
+        Repo.one(
+          from(b in ProjectBudget,
+            where: b.project_id == ^project.id,
+            preload: [approved_by: [], lines: ^project_budget_lines_query()]
+          )
+        )
+
+      {:ok, budget}
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def create_project_budget(%Scope{} = scope, %Project{} = project) do
+    with true <- Projects.authorized?(scope, project, :manage_budget) do
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(
+        :project_budget,
+        ProjectBudget.create_changeset(%ProjectBudget{}, %{project_id: project.id})
+      )
+      |> Ecto.Multi.run(:lines, fn repo, %{project_budget: budget} ->
+        insert_project_budget_lines(repo, budget, project)
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{project_budget: budget}} -> {:ok, preload_project_budget(budget)}
+        {:error, :project_budget, changeset, _changes} -> {:error, changeset}
+        {:error, :lines, reason, _changes} -> {:error, reason}
+      end
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def approve_project_budget(
+        %Scope{user: %User{} = actor} = scope,
+        %Project{} = project,
+        %ProjectBudget{} = budget
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_budget) do
+      approved_at = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      Ecto.Multi.new()
+      |> Ecto.Multi.run(:locked_budget, fn repo, _changes ->
+        case repo.one(
+               from(b in ProjectBudget,
+                 where: b.id == ^budget.id and b.project_id == ^project.id,
+                 lock: "FOR UPDATE"
+               )
+             ) do
+          %ProjectBudget{status: :draft} = stored -> {:ok, stored}
+          %ProjectBudget{status: :approved} -> {:error, :already_approved}
+          nil -> {:error, :not_found}
+        end
+      end)
+      |> Ecto.Multi.update(:approved_budget, fn %{locked_budget: stored} ->
+        ProjectBudget.approval_changeset(stored, actor.id, approved_at)
+      end)
+      |> Ecto.Multi.insert(:audit_event, fn %{approved_budget: approved} ->
+        Audit.event_changeset(actor, project, %{
+          action: :budget_approved,
+          entity_type: "project_budget",
+          entity_id: approved.id,
+          previous_state: %{"status" => "draft"},
+          new_state: project_budget_state(approved)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{approved_budget: approved}} -> {:ok, preload_project_budget(approved)}
+        {:error, :locked_budget, reason, _changes} -> {:error, reason}
+        {:error, :approved_budget, changeset, _changes} -> {:error, changeset}
+      end
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def budget_editable?(%Project{id: project_id}) do
+    not Repo.exists?(
+      from(b in ProjectBudget, where: b.project_id == ^project_id and b.status == :approved)
+    )
+  end
+
   def change_budgeted_performance_sheet(
         %BudgetedPerformanceSheet{} = sheet,
         attrs \\ %{}
@@ -106,6 +196,7 @@ defmodule Civora.Budget do
         source_id
       ) do
     with true <- Projects.authorized?(scope, project, :manage_budget),
+         :ok <- ensure_budget_editable(project),
          %WorkItem{} <- work_item_for_project(project, work_item.id),
          %PerformanceSheet{} = source <- performance_sheet_with_resources(source_id) do
       source
@@ -115,6 +206,7 @@ defmodule Civora.Budget do
       |> preload_budgeted_sheet_result()
     else
       false -> {:error, :unauthorized}
+      {:error, :budget_approved} = error -> error
       nil -> {:error, :not_found}
     end
   end
@@ -126,6 +218,7 @@ defmodule Civora.Budget do
         attrs
       ) do
     with true <- Projects.authorized?(scope, project, :manage_budget),
+         :ok <- ensure_budget_editable(project),
          %BudgetedPerformanceSheet{} = stored <- budgeted_sheet_for_project(project, sheet.id) do
       stored
       |> BudgetedPerformanceSheet.changeset(attrs)
@@ -133,6 +226,7 @@ defmodule Civora.Budget do
       |> preload_budgeted_sheet_result()
     else
       false -> {:error, :unauthorized}
+      {:error, :budget_approved} = error -> error
       nil -> {:error, :not_found}
     end
   end
@@ -176,6 +270,7 @@ defmodule Civora.Budget do
         attrs
       ) do
     with true <- Projects.authorized?(scope, project, :manage_budget),
+         :ok <- ensure_budget_editable(project),
          %ProjectPhase{} <- phase_for_project(project, phase_id(attrs)) do
       attrs = put_project_id(attrs, project.id)
 
@@ -196,6 +291,7 @@ defmodule Civora.Budget do
       end
     else
       false -> {:error, :unauthorized}
+      {:error, :budget_approved} = error -> error
       nil -> {:error, invalid_phase_changeset(attrs, project.id)}
     end
   end
@@ -215,6 +311,94 @@ defmodule Civora.Budget do
       %PerformanceSheet{} = source -> Repo.preload(source, :resources)
       nil -> nil
     end
+  end
+
+  defp insert_project_budget_lines(repo, budget, project) do
+    items =
+      from(w in WorkItem,
+        where: w.project_id == ^project.id,
+        order_by: [asc: w.id],
+        preload: [:project_phase, budgeted_performance_sheet: :resources]
+      )
+      |> repo.all()
+
+    if items == [] do
+      {:error, :no_work_items}
+    else
+      Enum.reduce_while(items, {:ok, []}, fn item, {:ok, lines} ->
+        with {:ok, line} <-
+               %ProjectBudgetLine{}
+               |> ProjectBudgetLine.changeset(project_budget_line_attrs(budget, item))
+               |> repo.insert(),
+             {:ok, _resources} <- insert_project_budget_line_resources(repo, line, item) do
+          {:cont, {:ok, [line | lines]}}
+        else
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+    end
+  end
+
+  defp insert_project_budget_line_resources(repo, line, item) do
+    resources =
+      case item.budgeted_performance_sheet do
+        %BudgetedPerformanceSheet{resources: resources} -> resources
+        nil -> []
+      end
+
+    Enum.reduce_while(resources, {:ok, []}, fn resource, {:ok, copied} ->
+      attrs = %{
+        project_budget_line_id: line.id,
+        category: resource.category,
+        name: resource.name,
+        unit: resource.unit,
+        quantity: resource.quantity
+      }
+
+      case repo.insert(ProjectBudgetLineResource.changeset(%ProjectBudgetLineResource{}, attrs)) do
+        {:ok, inserted} -> {:cont, {:ok, [inserted | copied]}}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  defp project_budget_line_attrs(budget, item) do
+    sheet = item.budgeted_performance_sheet
+
+    %{
+      project_budget_id: budget.id,
+      source_work_item_id: item.id,
+      source_budgeted_performance_sheet_id: sheet && sheet.id,
+      phase_name: item.project_phase.name,
+      description: item.description,
+      unit: item.unit,
+      quantity: item.quantity,
+      sheet_name: sheet && sheet.name,
+      sheet_description: sheet && sheet.description,
+      sheet_unit: sheet && sheet.unit,
+      productivity: sheet && sheet.productivity,
+      waste_percentage: sheet && sheet.waste_percentage
+    }
+  end
+
+  defp project_budget_lines_query do
+    from(l in ProjectBudgetLine, order_by: [asc: l.id], preload: :resources)
+  end
+
+  defp preload_project_budget(budget) do
+    Repo.preload(budget, [approved_by: [], lines: project_budget_lines_query()], force: true)
+  end
+
+  defp project_budget_state(budget) do
+    %{
+      "status" => Atom.to_string(budget.status),
+      "approved_at" => DateTime.to_iso8601(budget.approved_at),
+      "approved_by_id" => budget.approved_by_id
+    }
+  end
+
+  defp ensure_budget_editable(project) do
+    if budget_editable?(project), do: :ok, else: {:error, :budget_approved}
   end
 
   defp budgeted_sheet_for_project(%Project{id: project_id}, sheet_id) do

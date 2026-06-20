@@ -21,6 +21,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:project, project)
        |> assign(:work_item, item)
        |> assign(:budgeted_sheet, budgeted_sheet)
+       |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(:performance_sheet_options, performance_sheet_options(socket))
        |> assign(
          :can_manage_budget,
@@ -68,6 +69,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
         <section class="py-7" aria-label="Ficha presupuestada">
           <div class="border-b border-base-300 pb-4">
             <p class="text-sm font-medium text-primary">Presupuesto del proyecto</p>
+
             <h2 class="mt-1 text-xl font-semibold">Ficha presupuestada</h2>
           </div>
 
@@ -77,7 +79,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
             </p>
 
             <.form
-              :if={@can_manage_budget && @performance_sheet_options != []}
+              :if={@can_manage_budget && @budget_editable && @performance_sheet_options != []}
               for={@source_form}
               id="budgeted-sheet-source-form"
               phx-submit="create_budgeted_sheet"
@@ -93,13 +95,14 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   required
                 />
               </div>
+
               <.button variant="primary" phx-disable-with="Generando...">
                 Generar copia historica
               </.button>
             </.form>
 
             <p
-              :if={@can_manage_budget && @performance_sheet_options == []}
+              :if={@can_manage_budget && @budget_editable && @performance_sheet_options == []}
               class="mt-4 text-sm text-warning"
             >
               Crea primero una ficha en la biblioteca de rendimientos.
@@ -110,6 +113,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 class="font-semibold">{@budgeted_sheet.name}</h3>
+
                 <p class="mt-1 text-sm text-base-content/60">
                   Copia de {@budgeted_sheet.source_performance_sheet.name}
                 </p>
@@ -121,12 +125,16 @@ defmodule CivoraWeb.WorkItemLive.Show do
               {@budgeted_sheet.description}
             </p>
 
-            <div :if={!@can_manage_budget} class="mt-6 overflow-x-auto">
+            <div :if={!@can_manage_budget || !@budget_editable} class="mt-6 overflow-x-auto">
               <.resource_table resources={@budgeted_sheet.resources} />
             </div>
 
+            <p :if={@can_manage_budget && !@budget_editable} class="mt-4 text-sm text-success">
+              Esta ficha forma parte de un presupuesto aprobado y no admite edicion directa.
+            </p>
+
             <.form
-              :if={@can_manage_budget}
+              :if={@can_manage_budget && @budget_editable}
               for={@budgeted_sheet_form}
               id="budgeted-sheet-form"
               phx-submit="update_budgeted_sheet"
@@ -161,6 +169,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
               <fieldset class="space-y-4 border-t border-base-300 pt-4">
                 <legend class="text-sm font-semibold">Recursos copiados</legend>
+
                 <.inputs_for :let={resource_form} field={@budgeted_sheet_form[:resources]}>
                   <div class="grid gap-3 rounded-box border border-base-300 p-3 sm:grid-cols-4">
                     <.input
@@ -169,8 +178,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                       label="Tipo"
                       options={resource_category_options()}
                       required
-                    />
-                    <.input field={resource_form[:name]} label="Recurso" required />
+                    /> <.input field={resource_form[:name]} label="Recurso" required />
                     <.input field={resource_form[:unit]} label="Unidad" required />
                     <.input
                       field={resource_form[:quantity]}
@@ -205,10 +213,13 @@ defmodule CivoraWeb.WorkItemLive.Show do
           <th>Tipo</th><th>Recurso</th><th class="text-right">Cantidad</th>
         </tr>
       </thead>
+
       <tbody>
         <tr :for={resource <- @resources}>
           <td>{Budget.resource_category_label(resource.category)}</td>
+
           <td>{resource.name}</td>
+
           <td class="text-right">{resource.quantity} {resource.unit}</td>
         </tr>
       </tbody>
@@ -238,6 +249,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
       {:error, %Ecto.Changeset{}} ->
         {:noreply, put_flash(socket, :error, "La partida ya tiene una ficha presupuestada.")}
 
+      {:error, :budget_approved} ->
+        {:noreply,
+         put_flash(socket, :error, "El presupuesto aprobado no admite cambios directos.")}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "No se pudo generar la ficha presupuestada.")}
     end
@@ -263,6 +278,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_budgeted_sheet_form(socket, changeset)}
+
+      {:error, :budget_approved} ->
+        {:noreply,
+         put_flash(socket, :error, "El presupuesto aprobado no admite cambios directos.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "No se pudo actualizar la ficha presupuestada.")}

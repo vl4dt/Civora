@@ -17,6 +17,7 @@ defmodule CivoraWeb.WorkItemLive.Index do
        |> assign(:project, project)
        |> assign(:phases, phases)
        |> assign(:work_items, work_items)
+       |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(
          :can_manage_budget,
          Projects.authorized?(socket.assigns.current_scope, project, :manage_budget)
@@ -38,12 +39,16 @@ defmodule CivoraWeb.WorkItemLive.Index do
         >
           <.icon name="hero-arrow-left" class="size-4" /> {@project.name}
         </.link>
+
         <div class="mt-6 border-b border-base-300 pb-6">
           <p class="text-sm font-medium text-primary">Presupuesto</p>
+
           <h1 class="mt-1 text-3xl font-semibold">Partidas de obra</h1>
+
           <p class="mt-2 text-sm text-base-content/65">
             Unidades economicas y de control de calidad del proyecto.
           </p>
+
           <.link navigate={~p"/performance-sheets"} class="btn btn-ghost btn-sm mt-4">
             <.icon name="hero-calculator" class="size-4" /> Biblioteca de rendimientos
           </.link>
@@ -72,6 +77,7 @@ defmodule CivoraWeb.WorkItemLive.Index do
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 class="font-semibold">{item.description}</h2>
+
                 <p class="mt-1 text-sm text-base-content/60">{item.project_phase.name}</p>
               </div>
               <span class="badge badge-outline">{item.quantity} {item.unit}</span>
@@ -81,12 +87,15 @@ defmodule CivoraWeb.WorkItemLive.Index do
 
         <aside :if={@can_manage_budget} class="border-l-0 border-base-300 lg:border-l lg:pl-8">
           <h2 class="text-base font-semibold">Agregar partida</h2>
+          <p :if={!@budget_editable} class="mt-4 text-sm leading-6 text-success">
+            El presupuesto aprobado es inalterable. No se pueden agregar partidas directamente.
+          </p>
           <p :if={@phases == []} class="mt-4 text-sm leading-6 text-warning">
             Crea una fase del proyecto antes de agregar partidas.
           </p>
 
           <.form
-            :if={@phases != []}
+            :if={@phases != [] && @budget_editable}
             for={@work_item_form}
             id="work-item-form"
             phx-change="validate"
@@ -119,6 +128,7 @@ defmodule CivoraWeb.WorkItemLive.Index do
                 required
               />
             </div>
+
             <.button variant="primary" class="btn btn-primary w-full" phx-disable-with="Agregando...">
               <.icon name="hero-plus" class="size-4" /> Agregar partida
             </.button>
@@ -153,6 +163,10 @@ defmodule CivoraWeb.WorkItemLive.Index do
 
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para agregar partidas.")}
+
+      {:error, :budget_approved} ->
+        {:noreply,
+         put_flash(socket, :error, "El presupuesto aprobado no admite cambios directos.")}
     end
   end
 

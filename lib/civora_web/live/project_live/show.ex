@@ -48,12 +48,16 @@ defmodule CivoraWeb.ProjectLive.Show do
           </div>
 
           <div class="flex shrink-0 items-center gap-3">
+            <.link navigate={~p"/projects/#{@project}/budget"} class="btn btn-ghost btn-sm">
+              <.icon name="hero-banknotes" class="size-4" /> Presupuesto
+            </.link>
             <.link
               navigate={~p"/projects/#{@project}/work-items"}
               class="btn btn-ghost btn-sm"
             >
               <.icon name="hero-clipboard-document-list" class="size-4" /> Partidas
             </.link>
+
             <.link
               navigate={~p"/projects/#{@project}/audit"}
               class="btn btn-ghost btn-sm"

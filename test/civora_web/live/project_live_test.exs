@@ -283,6 +283,70 @@ defmodule CivoraWeb.ProjectLiveTest do
     end
   end
 
+  describe "project budget" do
+    test "creates and approves an immutable baseline from project work", %{
+      conn: conn,
+      scope: scope
+    } do
+      project = project_fixture(scope, %{name: "Presupuesto Hospital"})
+      phase = project_phase_fixture(scope, project, %{name: "Cimentacion"})
+
+      work_item =
+        work_item_fixture(scope, project, phase, %{description: "Zapata corrida"})
+
+      sheet = budgeted_performance_sheet_fixture(scope, project, work_item)
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/budget")
+      assert html =~ "Presupuesto inicial pendiente"
+      assert has_element?(view, "#create-project-budget")
+
+      html = render_click(view, "create_budget")
+      assert html =~ "Presupuesto inicial generado correctamente."
+      assert html =~ "Zapata corrida"
+      assert html =~ sheet.name
+      assert has_element?(view, "#approve-project-budget")
+
+      html = render_click(view, "approve_budget")
+      assert html =~ "Presupuesto aprobado como linea base inalterable."
+      assert html =~ "Linea base aprobada e inalterable"
+      refute has_element?(view, "#approve-project-budget")
+
+      {:ok, index_view, index_html} = live(conn, ~p"/projects/#{project}/work-items")
+      assert index_html =~ "El presupuesto aprobado es inalterable"
+      refute has_element?(index_view, "#work-item-form")
+
+      {:ok, item_view, item_html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+      assert item_html =~ "no admite edicion directa"
+      refute has_element?(item_view, "#budgeted-sheet-form")
+    end
+
+    test "read-only members inspect a budget without management actions", %{scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      _sheet = budgeted_performance_sheet_fixture(scope, project, work_item)
+      budget = project_budget_fixture(scope, project)
+
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+      viewer_conn = build_conn() |> log_in_user(viewer)
+
+      {:ok, view, html} = live(viewer_conn, ~p"/projects/#{project}/budget")
+      assert html =~ hd(budget.lines).description
+      refute has_element?(view, "#approve-project-budget")
+      refute has_element?(view, "#create-project-budget")
+    end
+
+    test "users outside the project cannot inspect its budget", %{scope: scope} do
+      project = project_fixture(scope)
+      outsider_conn = build_conn() |> log_in_user(user_fixture())
+
+      assert_raise Ecto.NoResultsError, fn ->
+        live(outsider_conn, ~p"/projects/#{project}/budget")
+      end
+    end
+  end
+
   describe "project audit" do
     test "members can inspect immutable project events", %{
       conn: conn,
