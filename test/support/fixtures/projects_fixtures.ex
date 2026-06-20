@@ -76,4 +76,15 @@ defmodule Civora.ProjectsFixtures do
 
     sheet
   end
+
+  def project_budget_fixture(scope, project) do
+    {:ok, budget} = Civora.Budget.create_project_budget(scope, project)
+    budget
+  end
+
+  def approved_project_budget_fixture(scope, project) do
+    budget = project_budget_fixture(scope, project)
+    {:ok, approved} = Civora.Budget.approve_project_budget(scope, project, budget)
+    approved
+  end
 end

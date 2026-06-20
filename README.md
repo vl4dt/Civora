@@ -67,6 +67,9 @@ La biblioteca reutilizable de fichas de rendimiento esta documentada en
 Las copias historicas por partida usadas en presupuesto estan documentadas en
 `docs/BUDGETED_PERFORMANCE_SHEETS.md`.
 
+La generacion y aprobacion de la linea base inalterable estan documentadas en
+`docs/APPROVED_BUDGETS.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

@@ -7,7 +7,15 @@ defmodule Civora.BudgetTest do
   alias Civora.Accounts.Scope
   alias Civora.Audit.AuditEvent
   alias Civora.Budget
-  alias Civora.Budget.{BudgetedPerformanceSheet, PerformanceSheet, WorkItem}
+
+  alias Civora.Budget.{
+    BudgetedPerformanceSheet,
+    PerformanceSheet,
+    ProjectBudget,
+    ProjectBudgetLine,
+    WorkItem
+  }
+
   alias Civora.Repo
 
   setup do
@@ -388,6 +396,178 @@ defmodule Civora.BudgetTest do
                  context.project,
                  context.work_item
                )
+    end
+  end
+
+  describe "project budgets" do
+    setup context do
+      work_item = work_item_fixture(context.scope, context.project, context.phase)
+      sheet = budgeted_performance_sheet_fixture(context.scope, context.project, work_item)
+      Map.merge(context, %{work_item: work_item, sheet: sheet})
+    end
+
+    test "creates an initial draft by copying work items, sheets, and resources", context do
+      assert {:ok, %ProjectBudget{status: :draft} = budget} =
+               Budget.create_project_budget(context.scope, context.project)
+
+      assert budget.project_id == context.project.id
+      assert is_nil(budget.approved_at)
+      assert [%ProjectBudgetLine{} = line] = budget.lines
+      assert line.source_work_item_id == context.work_item.id
+      assert line.source_budgeted_performance_sheet_id == context.sheet.id
+      assert line.phase_name == context.phase.name
+      assert line.description == context.work_item.description
+      assert Decimal.equal?(line.quantity, context.work_item.quantity)
+      assert line.sheet_name == context.sheet.name
+      assert Enum.map(line.resources, & &1.name) == Enum.map(context.sheet.resources, & &1.name)
+    end
+
+    test "the copied draft does not change when its sources change", context do
+      budget = project_budget_fixture(context.scope, context.project)
+      original_line = hd(budget.lines)
+      original_resource = hd(original_line.resources)
+      source_resource = hd(context.sheet.resources)
+
+      assert {:ok, _updated_sheet} =
+               Budget.update_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.sheet,
+                 %{
+                   name: "Fuente cambiada",
+                   resources: [
+                     %{
+                       id: source_resource.id,
+                       category: source_resource.category,
+                       name: "Recurso cambiado",
+                       unit: source_resource.unit,
+                       quantity: "99"
+                     }
+                   ]
+                 }
+               )
+
+      assert {:ok, persisted} = Budget.get_project_budget(context.scope, context.project)
+      persisted_line = hd(persisted.lines)
+      assert persisted_line.sheet_name == original_line.sheet_name
+      assert hd(persisted_line.resources).name == original_resource.name
+    end
+
+    test "requires a work item and enforces one budget per project", context do
+      empty_scope = user_fixture() |> Scope.for_user()
+      empty_project = project_fixture(empty_scope)
+
+      assert {:error, :no_work_items} = Budget.create_project_budget(empty_scope, empty_project)
+      assert {:ok, _budget} = Budget.create_project_budget(context.scope, context.project)
+      assert {:error, changeset} = Budget.create_project_budget(context.scope, context.project)
+      assert "has already been taken" in errors_on(changeset).project_id
+    end
+
+    test "copies work items that do not yet have a budgeted sheet", context do
+      second_item =
+        work_item_fixture(context.scope, context.project, context.phase, %{
+          description: "Partida sin ficha"
+        })
+
+      budget = project_budget_fixture(context.scope, context.project)
+      line = Enum.find(budget.lines, &(&1.source_work_item_id == second_item.id))
+
+      assert line.description == "Partida sin ficha"
+      assert is_nil(line.source_budgeted_performance_sheet_id)
+      assert is_nil(line.sheet_name)
+      assert line.resources == []
+    end
+
+    test "read-only members can view but cannot create or approve", context do
+      viewer = user_fixture()
+      assignment_fixture(context.scope, context.project, viewer, :consulta)
+      viewer_scope = Scope.for_user(viewer)
+
+      assert {:error, :unauthorized} =
+               Budget.create_project_budget(viewer_scope, context.project)
+
+      budget = project_budget_fixture(context.scope, context.project)
+      assert {:ok, fetched} = Budget.get_project_budget(viewer_scope, context.project)
+      assert fetched.id == budget.id
+
+      assert {:error, :unauthorized} =
+               Budget.approve_project_budget(viewer_scope, context.project, budget)
+    end
+
+    test "approval changes state and appends its audit event atomically", context do
+      budget = project_budget_fixture(context.scope, context.project)
+
+      assert {:ok, %ProjectBudget{status: :approved} = approved} =
+               Budget.approve_project_budget(context.scope, context.project, budget)
+
+      assert approved.approved_by_id == context.scope.user.id
+      assert %DateTime{} = approved.approved_at
+      refute Budget.budget_editable?(context.project)
+
+      event = Repo.get_by!(AuditEvent, action: :budget_approved, entity_id: approved.id)
+      assert event.project_id == context.project.id
+      assert event.actor_id == context.scope.user.id
+      assert event.previous_state == %{"status" => "draft"}
+      assert event.new_state["status"] == "approved"
+
+      assert {:error, :already_approved} =
+               Budget.approve_project_budget(context.scope, context.project, approved)
+
+      assert Repo.aggregate(
+               from(e in AuditEvent, where: e.action == :budget_approved),
+               :count
+             ) == 1
+    end
+
+    test "approval blocks direct changes to project budget inputs", context do
+      budget = project_budget_fixture(context.scope, context.project)
+
+      assert {:ok, _approved} =
+               Budget.approve_project_budget(context.scope, context.project, budget)
+
+      assert {:error, :budget_approved} =
+               Budget.update_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.sheet,
+                 %{name: "Cambio prohibido"}
+               )
+
+      assert {:error, :budget_approved} =
+               Budget.create_work_item(context.scope, context.project, %{
+                 project_phase_id: context.phase.id,
+                 unit: "m2",
+                 quantity: "2",
+                 description: "Partida posterior"
+               })
+    end
+
+    test "database rejects mutation of an approved budget line", context do
+      budget = project_budget_fixture(context.scope, context.project)
+
+      assert {:ok, approved} =
+               Budget.approve_project_budget(context.scope, context.project, budget)
+
+      line = hd(approved.lines)
+
+      assert_raise Postgrex.Error, ~r/approved project budget contents are immutable/, fn ->
+        line
+        |> Ecto.Changeset.change(description: "Cambio directo")
+        |> Repo.update!()
+      end
+    end
+
+    test "database rejects mutation of the approved budget record", context do
+      budget = project_budget_fixture(context.scope, context.project)
+
+      assert {:ok, approved} =
+               Budget.approve_project_budget(context.scope, context.project, budget)
+
+      assert_raise Postgrex.Error, ~r/approved project budgets are immutable/, fn ->
+        approved
+        |> Ecto.Changeset.change(approved_at: DateTime.add(approved.approved_at, 60))
+        |> Repo.update!()
+      end
     end
   end
 
