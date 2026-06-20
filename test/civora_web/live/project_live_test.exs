@@ -201,6 +201,86 @@ defmodule CivoraWeb.ProjectLiveTest do
         live(outsider_conn, ~p"/projects/#{project}/work-items/#{item}")
       end
     end
+
+    test "creates and edits a historical performance sheet copy", %{conn: conn, scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase, %{description: "Muro presupuestado"})
+      source = performance_sheet_fixture(scope, %{name: "Muro reusable"})
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+      assert html =~ "Aun no se ha generado una copia historica"
+      assert has_element?(view, "#budgeted-sheet-source-form")
+
+      html =
+        view
+        |> form("#budgeted-sheet-source-form",
+          budgeted_sheet_source: %{source_id: source.id}
+        )
+        |> render_submit()
+
+      assert html =~ "Ficha presupuestada creada correctamente."
+      assert html =~ "Copia de Muro reusable"
+      assert has_element?(view, "#budgeted-sheet-form")
+
+      [snapshot] = Civora.Repo.all(Civora.Budget.BudgetedPerformanceSheet)
+      snapshot = Civora.Repo.preload(snapshot, :resources)
+
+      resource_params =
+        snapshot.resources
+        |> Enum.with_index()
+        |> Map.new(fn {resource, index} ->
+          {to_string(index),
+           %{
+             id: resource.id,
+             category: resource.category,
+             name: resource.name,
+             unit: resource.unit,
+             quantity: if(index == 0, do: "3.5", else: resource.quantity)
+           }}
+        end)
+
+      html =
+        view
+        |> form("#budgeted-sheet-form",
+          budgeted_performance_sheet: %{
+            name: "Muro ajustado para proyecto",
+            description: snapshot.description,
+            unit: snapshot.unit,
+            productivity: snapshot.productivity,
+            waste_percentage: "9",
+            resources: resource_params
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Ficha presupuestada actualizada correctamente."
+      assert html =~ "Muro ajustado para proyecto"
+
+      persisted_resource =
+        snapshot.resources
+        |> hd()
+        |> then(&Civora.Repo.get!(Civora.Budget.BudgetedPerformanceSheetResource, &1.id))
+
+      assert Decimal.equal?(persisted_resource.quantity, Decimal.new("3.5"))
+      assert Civora.Repo.get!(Civora.Budget.PerformanceSheet, source.id).name == "Muro reusable"
+    end
+
+    test "read-only project members see the snapshot without edit controls", %{scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      snapshot = budgeted_performance_sheet_fixture(scope, project, work_item)
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+      viewer_conn = build_conn() |> log_in_user(viewer)
+
+      {:ok, view, html} = live(viewer_conn, ~p"/projects/#{project}/work-items/#{work_item}")
+      assert html =~ snapshot.name
+      assert html =~ hd(snapshot.resources).name
+      refute has_element?(view, "#budgeted-sheet-form")
+      refute has_element?(view, "#budgeted-sheet-source-form")
+    end
   end
 
   describe "project audit" do

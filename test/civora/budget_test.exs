@@ -7,7 +7,7 @@ defmodule Civora.BudgetTest do
   alias Civora.Accounts.Scope
   alias Civora.Audit.AuditEvent
   alias Civora.Budget
-  alias Civora.Budget.{PerformanceSheet, WorkItem}
+  alias Civora.Budget.{BudgetedPerformanceSheet, PerformanceSheet, WorkItem}
   alias Civora.Repo
 
   setup do
@@ -209,6 +209,185 @@ defmodule Civora.BudgetTest do
 
       assert {:ok, sheet} = Budget.create_performance_sheet(context.scope, attrs)
       assert [%{name: "Cemento"}] = sheet.resources
+    end
+  end
+
+  describe "budgeted performance sheets" do
+    setup context do
+      work_item = work_item_fixture(context.scope, context.project, context.phase)
+      source = performance_sheet_fixture(context.scope)
+      Map.merge(context, %{work_item: work_item, source: source})
+    end
+
+    test "copies every source value and resource into the project work item", context do
+      assert {:ok, %BudgetedPerformanceSheet{} = snapshot} =
+               Budget.create_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.work_item,
+                 context.source.id
+               )
+
+      assert snapshot.project_id == context.project.id
+      assert snapshot.work_item_id == context.work_item.id
+      assert snapshot.source_performance_sheet_id == context.source.id
+      assert snapshot.name == context.source.name
+      assert snapshot.description == context.source.description
+      assert snapshot.unit == context.source.unit
+      assert Decimal.equal?(snapshot.productivity, context.source.productivity)
+      assert Decimal.equal?(snapshot.waste_percentage, context.source.waste_percentage)
+
+      assert Enum.map(snapshot.resources, &{&1.category, &1.name, &1.unit}) ==
+               Enum.map(context.source.resources, &{&1.category, &1.name, &1.unit})
+
+      assert Enum.zip(snapshot.resources, context.source.resources)
+             |> Enum.all?(fn {copied, source} ->
+               Decimal.equal?(copied.quantity, source.quantity)
+             end)
+
+      assert {:ok, fetched} =
+               Budget.get_budgeted_performance_sheet_for_work_item(
+                 context.scope,
+                 context.project,
+                 context.work_item
+               )
+
+      assert fetched.id == snapshot.id
+      assert fetched.source_performance_sheet.name == context.source.name
+    end
+
+    test "source changes do not alter the historical project copy", context do
+      snapshot =
+        budgeted_performance_sheet_fixture(
+          context.scope,
+          context.project,
+          context.work_item,
+          context.source
+        )
+
+      source_resource = hd(context.source.resources)
+
+      assert {:ok, _updated_source} =
+               context.source
+               |> PerformanceSheet.changeset(%{
+                 name: "Fuente modificada",
+                 resources: [
+                   %{
+                     id: source_resource.id,
+                     category: source_resource.category,
+                     name: "Recurso fuente modificado",
+                     unit: source_resource.unit,
+                     quantity: "99"
+                   }
+                 ]
+               })
+               |> Repo.update()
+
+      persisted = Repo.preload(Repo.get!(BudgetedPerformanceSheet, snapshot.id), :resources)
+      assert persisted.name == snapshot.name
+      refute persisted.name == "Fuente modificada"
+      refute Enum.any?(persisted.resources, &(&1.name == "Recurso fuente modificado"))
+    end
+
+    test "project copy is editable without changing its reusable source", context do
+      snapshot =
+        budgeted_performance_sheet_fixture(
+          context.scope,
+          context.project,
+          context.work_item,
+          context.source
+        )
+
+      [first | rest] = snapshot.resources
+
+      resources =
+        [first | rest]
+        |> Enum.map(fn resource ->
+          %{
+            id: resource.id,
+            category: resource.category,
+            name: resource.name,
+            unit: resource.unit,
+            quantity: if(resource.id == first.id, do: "2.25", else: resource.quantity)
+          }
+        end)
+
+      assert {:ok, updated} =
+               Budget.update_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 snapshot,
+                 %{name: "Ajuste del proyecto", waste_percentage: "12", resources: resources}
+               )
+
+      assert updated.name == "Ajuste del proyecto"
+      assert Decimal.equal?(hd(updated.resources).quantity, Decimal.new("2.25"))
+      assert Repo.get!(PerformanceSheet, context.source.id).name == context.source.name
+
+      assert Decimal.equal?(
+               hd(Repo.preload(context.source, :resources, force: true).resources).quantity,
+               hd(context.source.resources).quantity
+             )
+    end
+
+    test "enforces one snapshot per work item", context do
+      assert {:ok, _snapshot} =
+               Budget.create_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.work_item,
+                 context.source.id
+               )
+
+      assert {:error, changeset} =
+               Budget.create_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.work_item,
+                 context.source.id
+               )
+
+      assert "has already been taken" in errors_on(changeset).work_item_id
+    end
+
+    test "rejects a missing reusable source", context do
+      assert {:error, :not_found} =
+               Budget.create_budgeted_performance_sheet(
+                 context.scope,
+                 context.project,
+                 context.work_item,
+                 -1
+               )
+    end
+
+    test "rejects unauthorized and cross-project operations", context do
+      outsider_scope = user_fixture() |> Scope.for_user()
+
+      assert {:error, :unauthorized} =
+               Budget.create_budgeted_performance_sheet(
+                 outsider_scope,
+                 context.project,
+                 context.work_item,
+                 context.source.id
+               )
+
+      other_scope = user_fixture() |> Scope.for_user()
+      other_project = project_fixture(other_scope)
+
+      assert {:error, :not_found} =
+               Budget.create_budgeted_performance_sheet(
+                 other_scope,
+                 other_project,
+                 context.work_item,
+                 context.source.id
+               )
+
+      assert {:error, :unauthorized} =
+               Budget.get_budgeted_performance_sheet_for_work_item(
+                 outsider_scope,
+                 context.project,
+                 context.work_item
+               )
     end
   end
 

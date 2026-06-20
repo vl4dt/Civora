@@ -7,7 +7,14 @@ defmodule Civora.Budget do
 
   alias Civora.Accounts.{Scope, User}
   alias Civora.Audit
-  alias Civora.Budget.{PerformanceSheet, PerformanceSheetResource, WorkItem}
+
+  alias Civora.Budget.{
+    BudgetedPerformanceSheet,
+    PerformanceSheet,
+    PerformanceSheetResource,
+    WorkItem
+  }
+
   alias Civora.Projects
   alias Civora.Projects.{Project, ProjectPhase}
   alias Civora.Projects.ProjectAssignment
@@ -62,6 +69,73 @@ defmodule Civora.Budget do
 
   def resource_category_label(:material), do: "Material"
   def resource_category_label(:labor), do: "Mano de obra"
+
+  def change_budgeted_performance_sheet(
+        %BudgetedPerformanceSheet{} = sheet,
+        attrs \\ %{}
+      ) do
+    BudgetedPerformanceSheet.changeset(sheet, attrs)
+  end
+
+  def get_budgeted_performance_sheet_for_work_item(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %WorkItem{} <- work_item_for_project(project, work_item.id) do
+      sheet =
+        Repo.one(
+          from(s in BudgetedPerformanceSheet,
+            where: s.project_id == ^project.id and s.work_item_id == ^work_item.id,
+            preload: [:source_performance_sheet, :resources]
+          )
+        )
+
+      {:ok, sheet}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def create_budgeted_performance_sheet(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item,
+        source_id
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_budget),
+         %WorkItem{} <- work_item_for_project(project, work_item.id),
+         %PerformanceSheet{} = source <- performance_sheet_with_resources(source_id) do
+      source
+      |> budgeted_sheet_snapshot_attrs(project.id, work_item.id)
+      |> then(&BudgetedPerformanceSheet.changeset(%BudgetedPerformanceSheet{}, &1))
+      |> Repo.insert()
+      |> preload_budgeted_sheet_result()
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def update_budgeted_performance_sheet(
+        %Scope{} = scope,
+        %Project{} = project,
+        %BudgetedPerformanceSheet{} = sheet,
+        attrs
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_budget),
+         %BudgetedPerformanceSheet{} = stored <- budgeted_sheet_for_project(project, sheet.id) do
+      stored
+      |> BudgetedPerformanceSheet.changeset(attrs)
+      |> Repo.update()
+      |> preload_budgeted_sheet_result()
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
 
   def list_work_items(%Scope{} = scope, %Project{} = project) do
     with true <- Projects.authorized?(scope, project, :view) do
@@ -131,6 +205,54 @@ defmodule Civora.Budget do
   end
 
   defp phase_for_project(_project, _phase_id), do: nil
+
+  defp work_item_for_project(%Project{id: project_id}, work_item_id) do
+    Repo.get_by(WorkItem, id: work_item_id, project_id: project_id)
+  end
+
+  defp performance_sheet_with_resources(source_id) do
+    case Repo.get(PerformanceSheet, source_id) do
+      %PerformanceSheet{} = source -> Repo.preload(source, :resources)
+      nil -> nil
+    end
+  end
+
+  defp budgeted_sheet_for_project(%Project{id: project_id}, sheet_id) do
+    Repo.one(
+      from(s in BudgetedPerformanceSheet,
+        where: s.id == ^sheet_id and s.project_id == ^project_id,
+        preload: :resources
+      )
+    )
+  end
+
+  defp budgeted_sheet_snapshot_attrs(source, project_id, work_item_id) do
+    %{
+      project_id: project_id,
+      work_item_id: work_item_id,
+      source_performance_sheet_id: source.id,
+      name: source.name,
+      description: source.description,
+      unit: source.unit,
+      productivity: source.productivity,
+      waste_percentage: source.waste_percentage,
+      resources:
+        Enum.map(source.resources, fn resource ->
+          %{
+            category: resource.category,
+            name: resource.name,
+            unit: resource.unit,
+            quantity: resource.quantity
+          }
+        end)
+    }
+  end
+
+  defp preload_budgeted_sheet_result({:ok, sheet}) do
+    {:ok, Repo.preload(sheet, [:source_performance_sheet, :resources])}
+  end
+
+  defp preload_budgeted_sheet_result(error), do: error
 
   defp phase_id(attrs), do: attrs["project_phase_id"] || attrs[:project_phase_id]
 
