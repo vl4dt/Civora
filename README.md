@@ -70,6 +70,9 @@ Las copias historicas por partida usadas en presupuesto estan documentadas en
 La generacion y aprobacion de la linea base inalterable estan documentadas en
 `docs/APPROVED_BUDGETS.md`.
 
+Las identidades globales usadas como proveedores o subcontratistas estan documentadas en
+`docs/COUNTERPARTIES.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

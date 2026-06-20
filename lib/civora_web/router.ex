@@ -60,6 +60,8 @@ defmodule CivoraWeb.Router do
       live "/projects/:project_id/budget", ProjectBudgetLive.Show, :show
       live "/performance-sheets", PerformanceSheetLive.Index, :index
       live "/performance-sheets/:id", PerformanceSheetLive.Show, :show
+      live "/counterparties", CounterpartyLive.Index, :index
+      live "/counterparties/:id", CounterpartyLive.Show, :show
       live "/projects/:id", ProjectLive.Show, :show
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
