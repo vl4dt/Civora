@@ -23,9 +23,14 @@ defmodule CivoraWeb.ProjectLive.Index do
             Proyectos asignados a tu cuenta.
           </p>
         </div>
-        <.button navigate={~p"/projects/new"} variant="primary">
-          <.icon name="hero-plus" class="size-4" /> Nuevo proyecto
-        </.button>
+        <div class="flex flex-wrap gap-2">
+          <.button navigate={~p"/counterparties"} class="btn btn-ghost">
+            <.icon name="hero-user-group" class="size-4" /> Contrapartes
+          </.button>
+          <.button navigate={~p"/projects/new"} variant="primary">
+            <.icon name="hero-plus" class="size-4" /> Nuevo proyecto
+          </.button>
+        </div>
       </section>
 
       <section
