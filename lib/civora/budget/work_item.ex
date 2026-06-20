@@ -11,6 +11,7 @@ defmodule Civora.Budget.WorkItem do
 
     belongs_to :project, Project
     belongs_to :project_phase, ProjectPhase
+    has_one :budgeted_performance_sheet, Civora.Budget.BudgetedPerformanceSheet
 
     timestamps(type: :utc_datetime)
   end

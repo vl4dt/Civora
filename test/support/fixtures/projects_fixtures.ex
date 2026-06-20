@@ -67,4 +67,13 @@ defmodule Civora.ProjectsFixtures do
     {:ok, sheet} = Civora.Budget.create_performance_sheet(scope, attrs)
     sheet
   end
+
+  def budgeted_performance_sheet_fixture(scope, project, work_item, source \\ nil) do
+    source = source || performance_sheet_fixture(scope)
+
+    {:ok, sheet} =
+      Civora.Budget.create_budgeted_performance_sheet(scope, project, work_item, source.id)
+
+    sheet
+  end
 end
