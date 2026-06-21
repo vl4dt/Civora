@@ -12,6 +12,7 @@ defmodule Civora.Audit.AuditEvent do
     :project_assignment_role_changed,
     :project_assignment_removed,
     :work_item_created,
+    :subcontract_created,
     :budget_approved,
     :quality_accepted,
     :estimate_created

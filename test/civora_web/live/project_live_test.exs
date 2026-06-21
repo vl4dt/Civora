@@ -80,6 +80,7 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert has_element?(view, "#phase-form")
       assert has_element?(view, ~s|a[href="/projects/#{project.id}/audit"]|)
       assert has_element?(view, ~s|a[href="/projects/#{project.id}/work-items"]|)
+      assert has_element?(view, ~s|a[href="/projects/#{project.id}/subcontracts"]|)
 
       html =
         view
