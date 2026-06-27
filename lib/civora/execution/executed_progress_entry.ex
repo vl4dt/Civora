@@ -14,6 +14,7 @@ defmodule Civora.Execution.ExecutedProgressEntry do
     belongs_to :project, Project
     belongs_to :work_item, WorkItem
     belongs_to :work_activity, WorkActivity
+    has_one :quality_control, Civora.Quality.QualityControl
 
     timestamps(type: :utc_datetime)
   end
@@ -45,5 +46,9 @@ defmodule Civora.Execution.ExecutedProgressEntry do
     |> check_constraint(:location_sector,
       name: :executed_progress_entries_location_sector_length
     )
+  end
+
+  def payable_changeset(entry, payable) when is_boolean(payable) do
+    change(entry, payable: payable)
   end
 end

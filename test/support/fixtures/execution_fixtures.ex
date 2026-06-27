@@ -24,4 +24,16 @@ defmodule Civora.ExecutionFixtures do
     {:ok, entry} = Civora.Execution.create_executed_progress(scope, project, activity, attrs)
     entry
   end
+
+  def quality_control_fixture(scope, project, entry, attrs \\ %{}) do
+    attrs =
+      Enum.into(attrs, %{
+        accepted_quantity: Decimal.to_string(entry.quantity, :normal),
+        rejection_reason: "",
+        non_conformity_originated: false
+      })
+
+    {:ok, control} = Civora.Quality.create_quality_control(scope, project, entry, attrs)
+    control
+  end
 end

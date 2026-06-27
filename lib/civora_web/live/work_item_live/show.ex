@@ -6,6 +6,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
   alias Civora.Execution
   alias Civora.Execution.{ExecutedProgressEntry, WorkActivity}
   alias Civora.Projects
+  alias Civora.Quality
 
   @impl true
   def mount(%{"project_id" => project_id, "id" => id}, _session, socket) do
@@ -15,6 +16,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
            Execution.list_work_item_activities(socket.assigns.current_scope, project, item),
          {:ok, executed_progress_entries} <-
            Execution.list_work_item_executed_progress(socket.assigns.current_scope, project, item),
+         {:ok, quality_controls} <-
+           Quality.list_work_item_quality_controls(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
            Budget.get_budgeted_performance_sheet_for_work_item(
              socket.assigns.current_scope,
@@ -28,12 +31,17 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:work_item, item)
        |> assign(:activities, activities)
        |> assign(:executed_progress_entries, executed_progress_entries)
+       |> assign(:quality_controls_by_entry_id, quality_controls_by_entry_id(quality_controls))
        |> assign(:budgeted_sheet, budgeted_sheet)
        |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(:performance_sheet_options, performance_sheet_options(socket))
        |> assign(
          :can_manage_activities,
          Projects.authorized?(socket.assigns.current_scope, project, :manage_activities)
+       )
+       |> assign(
+         :can_manage_quality,
+         Projects.authorized?(socket.assigns.current_scope, project, :manage_quality)
        )
        |> assign(
          :can_manage_budget,
@@ -107,6 +115,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                 class="mt-4 rounded-box border border-base-300 p-4"
               >
                 <p class="font-semibold">{activity.location_sector}</p>
+
                 <p class="mt-2 text-sm leading-6 text-base-content/65">{activity.description}</p>
               </div>
 
@@ -140,9 +149,73 @@ defmodule CivoraWeb.WorkItemLive.Show do
                         {entry.work_activity.location_sector}
                       </p>
                     </div>
-
                     <span :if={!entry.payable} class="badge badge-outline">No pagable</span>
+                    <span :if={entry.payable} class="badge badge-success badge-outline">
+                      Pagable
+                    </span>
                   </div>
+
+                  <div
+                    :if={quality_control_for(@quality_controls_by_entry_id, entry)}
+                    class="mt-4 border-t border-base-300 pt-4 text-sm"
+                  >
+                    <% control = quality_control_for(@quality_controls_by_entry_id, entry) %>
+                    <p class="font-medium">{quality_status_label(control.status)}</p>
+                    <p class="mt-1 text-base-content/65">
+                      Aceptado: {control.accepted_quantity} {@work_item.unit}. Rechazado: {control.rejected_quantity} {@work_item.unit}.
+                    </p>
+                    <p :if={control.rejection_reason} class="mt-1 text-base-content/65">
+                      Motivo: {control.rejection_reason}
+                    </p>
+                    <span
+                      :if={control.non_conformity_originated}
+                      class="badge badge-warning badge-outline mt-3"
+                    >
+                      Origina no conformidad
+                    </span>
+                  </div>
+
+                  <.form
+                    :if={
+                      @can_manage_quality &&
+                        is_nil(quality_control_for(@quality_controls_by_entry_id, entry))
+                    }
+                    for={quality_control_form(entry)}
+                    id={"quality-control-form-#{entry.id}"}
+                    phx-submit="save_quality_control"
+                    class="mt-4 grid gap-3 border-t border-base-300 pt-4 sm:grid-cols-2"
+                  >
+                    <input
+                      type="hidden"
+                      name="quality_control[executed_progress_entry_id]"
+                      value={entry.id}
+                    />
+                    <.input
+                      field={quality_control_form(entry)[:accepted_quantity]}
+                      type="number"
+                      label="Cantidad aceptada"
+                      min="0"
+                      max={Decimal.to_string(entry.quantity, :normal)}
+                      step="0.0001"
+                      required
+                    />
+                    <.input
+                      field={quality_control_form(entry)[:non_conformity_originated]}
+                      type="checkbox"
+                      label="Origina no conformidad"
+                    />
+                    <div class="sm:col-span-2">
+                      <.input
+                        field={quality_control_form(entry)[:rejection_reason]}
+                        type="textarea"
+                        label="Motivo del rechazo parcial o total"
+                        rows="3"
+                      />
+                    </div>
+                    <.button variant="primary" class="sm:col-span-2" phx-disable-with="Registrando...">
+                      Registrar control de calidad
+                    </.button>
+                  </.form>
                 </div>
               </div>
             </div>
@@ -212,7 +285,6 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     placeholder="Nivel 2 / fachada norte"
                     required
                   />
-
                   <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
                     Registrar avance
                   </.button>
@@ -466,6 +538,43 @@ defmodule CivoraWeb.WorkItemLive.Show do
     end
   end
 
+  def handle_event("save_quality_control", %{"quality_control" => params}, socket) do
+    with %ExecutedProgressEntry{} = entry <-
+           selected_executed_progress(socket.assigns.executed_progress_entries, params) do
+      case Quality.create_quality_control(
+             socket.assigns.current_scope,
+             socket.assigns.project,
+             entry,
+             params
+           ) do
+        {:ok, control} ->
+          {:noreply,
+           socket
+           |> update(
+             :quality_controls_by_entry_id,
+             &Map.put(&1, control.executed_progress_entry_id, control)
+           )
+           |> update(:executed_progress_entries, &mark_entry_payable(&1, control))
+           |> put_flash(:info, "Control de calidad registrado correctamente.")}
+
+        {:error, %Ecto.Changeset{}} ->
+          {:noreply, put_flash(socket, :error, "Revisa la cantidad aceptada y el motivo.")}
+
+        {:error, :accepted_quantity_exceeds_executed} ->
+          {:noreply,
+           put_flash(socket, :error, "La cantidad aceptada no puede superar el avance ejecutado.")}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "No tienes permiso para controlar calidad.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "No se pudo registrar el control de calidad.")}
+      end
+    else
+      nil -> {:noreply, put_flash(socket, :error, "Selecciona un avance ejecutado valido.")}
+    end
+  end
+
   def handle_event(
         "create_budgeted_sheet",
         %{"budgeted_sheet_source" => %{"source_id" => source_id}},
@@ -545,6 +654,48 @@ defmodule CivoraWeb.WorkItemLive.Show do
   end
 
   defp selected_activity(_activities, _params), do: nil
+
+  defp selected_executed_progress(entries, %{"executed_progress_entry_id" => entry_id}) do
+    Enum.find(entries, &(to_string(&1.id) == to_string(entry_id)))
+  end
+
+  defp selected_executed_progress(_entries, _params), do: nil
+
+  defp quality_controls_by_entry_id(controls) do
+    Map.new(controls, &{&1.executed_progress_entry_id, &1})
+  end
+
+  defp quality_control_for(controls_by_entry_id, entry) do
+    Map.get(controls_by_entry_id, entry.id)
+  end
+
+  defp quality_control_form(entry) do
+    to_form(
+      %{
+        "executed_progress_entry_id" => entry.id,
+        "accepted_quantity" => Decimal.to_string(entry.quantity, :normal),
+        "rejection_reason" => "",
+        "non_conformity_originated" => false
+      },
+      as: :quality_control
+    )
+  end
+
+  defp quality_status_label(:accepted), do: "Aceptado por calidad"
+  defp quality_status_label(:partially_accepted), do: "Aceptado parcialmente"
+  defp quality_status_label(:rejected), do: "Rechazado por calidad"
+
+  defp mark_entry_payable(entries, control) do
+    payable = Decimal.gt?(control.accepted_quantity, Decimal.new("0"))
+
+    Enum.map(entries, fn
+      %ExecutedProgressEntry{id: id} = entry when id == control.executed_progress_entry_id ->
+        %{entry | payable: payable}
+
+      entry ->
+        entry
+    end)
+  end
 
   defp assign_source_form(socket) do
     assign(socket, :source_form, to_form(%{"source_id" => ""}, as: :budgeted_sheet_source))

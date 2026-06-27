@@ -11,6 +11,8 @@ actividad de obra.
 - El registro conserva la ubicacion o sector reportado al momento de captura.
 - Todo avance ejecutado se crea con `payable = false`. Convertirlo en avance
   pagable requiere un flujo posterior de calidad.
+- RS-28 marca `payable = true` solo cuando un control de calidad acepta una
+  cantidad mayor que cero. La cantidad exacta aceptada vive en el control.
 - La base de datos usa llaves foraneas compuestas para impedir que el avance
   apunte a una actividad o partida de otro proyecto.
 - La creacion del avance y su evento `executed_progress_created` se guardan en
@@ -23,4 +25,4 @@ ejecutado. Solo administradores y directores de proyecto pueden registrarlo en
 RS-27.
 
 RS-27 no implementa aceptacion de calidad, avance pagable, estimaciones ni pago
-de subcontrato.
+de subcontrato. RS-28 agrega el primer control de calidad sobre estos registros.
