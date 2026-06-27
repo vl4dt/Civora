@@ -19,6 +19,7 @@ defmodule Civora.Audit do
     project_assignment_removed: "Asignacion retirada",
     work_item_created: "Partida creada",
     subcontract_created: "Subcontrato creado",
+    work_activity_created: "Actividad de obra creada",
     budget_approved: "Presupuesto aprobado",
     quality_accepted: "Calidad aceptada",
     estimate_created: "Estimacion creada"

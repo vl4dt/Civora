@@ -76,6 +76,9 @@ Las identidades globales usadas como proveedores o subcontratistas estan documen
 Los acuerdos de subcontrato, sus partidas y condiciones iniciales estan documentados en
 `docs/SUBCONTRACTS.md`.
 
+Las actividades de obra vinculadas a partidas estan documentadas en
+`docs/WORK_ACTIVITIES.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

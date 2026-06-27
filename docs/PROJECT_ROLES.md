@@ -32,6 +32,10 @@ proyecto asignado.
 RS-25 permite que administradores y directores de proyecto creen subcontratos.
 Todos los miembros asignados pueden consultarlos.
 
+RS-26 permite que administradores y directores de proyecto creen actividades de
+obra sobre partidas existentes. Todos los miembros asignados pueden
+consultarlas.
+
 ## Integracion con proyectos
 
 La tabla `projects` contiene nombre, cliente/referencia, estado y descripcion.
