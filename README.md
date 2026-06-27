@@ -73,6 +73,9 @@ La generacion y aprobacion de la linea base inalterable estan documentadas en
 Las identidades globales usadas como proveedores o subcontratistas estan documentadas en
 `docs/COUNTERPARTIES.md`.
 
+Los acuerdos de subcontrato, sus partidas y condiciones iniciales estan documentados en
+`docs/SUBCONTRACTS.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

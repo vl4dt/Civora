@@ -24,6 +24,7 @@ build/
 coverage/
 /cover/
 /tmp/
+/.tmp/
 /priv/static/assets/
 /priv/static/cache_manifest.json
 /priv/static/**/*.gz

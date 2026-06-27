@@ -9,6 +9,8 @@ defmodule Civora.Subcontracts.Counterparty do
     field :role, Ecto.Enum, values: @roles
     field :contact, :string
 
+    has_many :subcontracts, Civora.Subcontracts.Subcontract
+
     timestamps(type: :utc_datetime)
   end
 

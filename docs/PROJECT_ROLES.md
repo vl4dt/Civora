@@ -29,6 +29,9 @@ Los permisos funcionales de presupuesto, calidad y finanzas se agregaran en los
 milestones correspondientes. RS-17 no concede acceso implicito fuera del
 proyecto asignado.
 
+RS-25 permite que administradores y directores de proyecto creen subcontratos.
+Todos los miembros asignados pueden consultarlos.
+
 ## Integracion con proyectos
 
 La tabla `projects` contiene nombre, cliente/referencia, estado y descripcion.
