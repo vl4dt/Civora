@@ -14,6 +14,7 @@ defmodule Civora.Audit.AuditEvent do
     :work_item_created,
     :subcontract_created,
     :work_activity_created,
+    :executed_progress_created,
     :budget_approved,
     :quality_accepted,
     :estimate_created

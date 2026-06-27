@@ -326,6 +326,67 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ activity.location_sector
       refute has_element?(view, "#work-activity-form")
     end
+
+    test "registers executed progress from the work item detail", %{
+      conn: conn,
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase, %{description: "Piso pulido"})
+
+      activity =
+        work_activity_fixture(scope, project, work_item, %{
+          location_sector: "Nivel 1 / lobby"
+        })
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ "Sin avance ejecutado registrado"
+      assert has_element?(view, "#executed-progress-form")
+
+      html =
+        view
+        |> form("#executed-progress-form",
+          executed_progress: %{
+            work_activity_id: activity.id,
+            quantity: "12.75",
+            location_sector: "Nivel 1 / lobby norte"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Avance ejecutado registrado correctamente."
+      assert html =~ "12.75"
+      assert html =~ "m2"
+      assert html =~ "Nivel 1 / lobby norte"
+      assert html =~ "No pagable"
+    end
+
+    test "read-only members inspect executed progress without registration controls", %{
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      activity = work_activity_fixture(scope, project, work_item)
+
+      progress =
+        executed_progress_fixture(scope, project, activity, %{
+          quantity: "4.2500",
+          location_sector: "Sector terminado"
+        })
+
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+      viewer_conn = build_conn() |> log_in_user(viewer)
+
+      {:ok, view, html} = live(viewer_conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ Decimal.to_string(progress.quantity)
+      assert html =~ progress.location_sector
+      refute has_element?(view, "#executed-progress-form")
+    end
   end
 
   describe "project budget" do

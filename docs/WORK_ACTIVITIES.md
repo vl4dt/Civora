@@ -19,6 +19,8 @@ Todos los miembros asignados al proyecto pueden listar y consultar las
 actividades de sus partidas. Solo administradores y directores de proyecto
 pueden crearlas.
 
-RS-26 no registra avance ejecutado, avance pagable, dependencias entre
-actividades ni asignaciones de recursos. Esos flujos pertenecen a milestones
-posteriores.
+El avance ejecutado sobre actividades esta documentado en
+`docs/EXECUTED_PROGRESS.md`.
+
+RS-26 no registra avance pagable, dependencias entre actividades ni asignaciones
+de recursos. Esos flujos pertenecen a milestones posteriores.

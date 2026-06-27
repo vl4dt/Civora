@@ -20,6 +20,7 @@ defmodule Civora.Audit do
     work_item_created: "Partida creada",
     subcontract_created: "Subcontrato creado",
     work_activity_created: "Actividad de obra creada",
+    executed_progress_created: "Avance ejecutado registrado",
     budget_approved: "Presupuesto aprobado",
     quality_accepted: "Calidad aceptada",
     estimate_created: "Estimacion creada"

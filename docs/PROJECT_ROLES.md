@@ -36,6 +36,10 @@ RS-26 permite que administradores y directores de proyecto creen actividades de
 obra sobre partidas existentes. Todos los miembros asignados pueden
 consultarlas.
 
+RS-27 permite que administradores y directores de proyecto registren avance
+ejecutado no pagable sobre actividades. Todos los miembros asignados pueden
+consultarlo.
+
 ## Integracion con proyectos
 
 La tabla `projects` contiene nombre, cliente/referencia, estado y descripcion.

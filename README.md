@@ -79,6 +79,9 @@ Los acuerdos de subcontrato, sus partidas y condiciones iniciales estan document
 Las actividades de obra vinculadas a partidas estan documentadas en
 `docs/WORK_ACTIVITIES.md`.
 
+El avance ejecutado no pagable registrado sobre actividades esta documentado en
+`docs/EXECUTED_PROGRESS.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

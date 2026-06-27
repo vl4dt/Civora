@@ -20,6 +20,7 @@ proyecto o usuario con historial no puede eliminarse destruyendo su auditoria.
 - Creacion de partida de obra.
 - Creacion de subcontrato y sus partidas vinculadas.
 - Creacion de actividad de obra.
+- Registro de avance ejecutado.
 - Asignacion de usuario al proyecto.
 - Cambio de rol por proyecto.
 - Retiro de una asignacion.

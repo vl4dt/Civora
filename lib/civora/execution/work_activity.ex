@@ -11,6 +11,7 @@ defmodule Civora.Execution.WorkActivity do
 
     belongs_to :project, Project
     belongs_to :work_item, WorkItem
+    has_many :executed_progress_entries, Civora.Execution.ExecutedProgressEntry
 
     timestamps(type: :utc_datetime)
   end
