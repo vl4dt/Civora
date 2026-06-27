@@ -4,7 +4,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
   alias Civora.Budget
   alias Civora.Budget.{BudgetedPerformanceSheet, WorkItem}
   alias Civora.Execution
-  alias Civora.Execution.WorkActivity
+  alias Civora.Execution.{ExecutedProgressEntry, WorkActivity}
   alias Civora.Projects
 
   @impl true
@@ -13,6 +13,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
          {:ok, item} <- Budget.get_work_item(socket.assigns.current_scope, project, id),
          {:ok, activities} <-
            Execution.list_work_item_activities(socket.assigns.current_scope, project, item),
+         {:ok, executed_progress_entries} <-
+           Execution.list_work_item_executed_progress(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
            Budget.get_budgeted_performance_sheet_for_work_item(
              socket.assigns.current_scope,
@@ -25,6 +27,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:project, project)
        |> assign(:work_item, item)
        |> assign(:activities, activities)
+       |> assign(:executed_progress_entries, executed_progress_entries)
        |> assign(:budgeted_sheet, budgeted_sheet)
        |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(:performance_sheet_options, performance_sheet_options(socket))
@@ -37,6 +40,9 @@ defmodule CivoraWeb.WorkItemLive.Show do
          Projects.authorized?(socket.assigns.current_scope, project, :manage_budget)
        )
        |> assign_activity_form(Execution.change_work_activity(%WorkActivity{}))
+       |> assign_executed_progress_form(
+         Execution.change_executed_progress(%ExecutedProgressEntry{})
+       )
        |> assign_source_form()
        |> assign_budgeted_sheet_form(budgeted_sheet)}
     else
@@ -103,6 +109,42 @@ defmodule CivoraWeb.WorkItemLive.Show do
                 <p class="font-semibold">{activity.location_sector}</p>
                 <p class="mt-2 text-sm leading-6 text-base-content/65">{activity.description}</p>
               </div>
+
+              <div class="mt-8 border-t border-base-300 pt-6">
+                <h3 class="text-base font-semibold">Avance ejecutado</h3>
+
+                <p class="mt-2 text-sm text-base-content/65">
+                  Cantidades reportadas fisicamente. No son pagables hasta pasar por calidad.
+                </p>
+
+                <div
+                  :if={@executed_progress_entries == []}
+                  id="executed-progress-empty"
+                  class="mt-4 rounded-box border border-dashed border-base-300 p-4 text-sm text-base-content/60"
+                >
+                  Sin avance ejecutado registrado.
+                </div>
+
+                <div
+                  :for={entry <- @executed_progress_entries}
+                  id={"executed-progress-#{entry.id}"}
+                  class="mt-4 rounded-box border border-base-300 p-4"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p class="font-semibold">
+                        {entry.quantity} {@work_item.unit} en {entry.location_sector}
+                      </p>
+
+                      <p class="mt-1 text-sm text-base-content/60">
+                        {entry.work_activity.location_sector}
+                      </p>
+                    </div>
+
+                    <span :if={!entry.payable} class="badge badge-outline">No pagable</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <aside :if={@can_manage_activities}>
@@ -128,11 +170,54 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   rows="4"
                   required
                 />
-
                 <.button variant="primary" class="w-full" phx-disable-with="Agregando...">
                   <.icon name="hero-plus" class="size-4" /> Agregar actividad
                 </.button>
               </.form>
+
+              <div class="mt-8 border-t border-base-300 pt-6">
+                <h3 class="text-base font-semibold">Registrar avance</h3>
+
+                <p :if={@activities == []} class="mt-4 text-sm leading-6 text-warning">
+                  Crea primero una actividad para registrar avance ejecutado.
+                </p>
+
+                <.form
+                  :if={@activities != []}
+                  for={@executed_progress_form}
+                  id="executed-progress-form"
+                  phx-change="validate_executed_progress"
+                  phx-submit="save_executed_progress"
+                  class="mt-5 space-y-4"
+                >
+                  <.input
+                    field={@executed_progress_form[:work_activity_id]}
+                    type="select"
+                    label="Actividad"
+                    prompt="Seleccionar"
+                    options={activity_options(@activities)}
+                    required
+                  />
+                  <.input
+                    field={@executed_progress_form[:quantity]}
+                    type="number"
+                    label="Cantidad ejecutada"
+                    min="0.0001"
+                    step="0.0001"
+                    required
+                  />
+                  <.input
+                    field={@executed_progress_form[:location_sector]}
+                    label="Ubicacion reportada"
+                    placeholder="Nivel 2 / fachada norte"
+                    required
+                  />
+
+                  <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
+                    Registrar avance
+                  </.button>
+                </.form>
+              </div>
             </aside>
           </div>
         </section>
@@ -337,6 +422,50 @@ defmodule CivoraWeb.WorkItemLive.Show do
     end
   end
 
+  def handle_event("validate_executed_progress", %{"executed_progress" => params}, socket) do
+    changeset =
+      %ExecutedProgressEntry{}
+      |> Execution.change_executed_progress(
+        params
+        |> Map.put("project_id", socket.assigns.project.id)
+        |> Map.put("work_item_id", socket.assigns.work_item.id)
+      )
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign_executed_progress_form(socket, changeset)}
+  end
+
+  def handle_event("save_executed_progress", %{"executed_progress" => params}, socket) do
+    with %WorkActivity{} = activity <- selected_activity(socket.assigns.activities, params) do
+      case Execution.create_executed_progress(
+             socket.assigns.current_scope,
+             socket.assigns.project,
+             activity,
+             params
+           ) do
+        {:ok, entry} ->
+          {:noreply,
+           socket
+           |> update(:executed_progress_entries, &[entry | &1])
+           |> assign_executed_progress_form(
+             Execution.change_executed_progress(%ExecutedProgressEntry{})
+           )
+           |> put_flash(:info, "Avance ejecutado registrado correctamente.")}
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          {:noreply, assign_executed_progress_form(socket, changeset)}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "No tienes permiso para registrar avance.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "No se pudo registrar el avance.")}
+      end
+    else
+      nil -> {:noreply, put_flash(socket, :error, "Selecciona una actividad valida.")}
+    end
+  end
+
   def handle_event(
         "create_budgeted_sheet",
         %{"budgeted_sheet_source" => %{"source_id" => source_id}},
@@ -407,12 +536,26 @@ defmodule CivoraWeb.WorkItemLive.Show do
     Enum.map(Budget.resource_categories(), &{Budget.resource_category_label(&1), &1})
   end
 
+  defp activity_options(activities) do
+    Enum.map(activities, &{&1.location_sector, &1.id})
+  end
+
+  defp selected_activity(activities, %{"work_activity_id" => activity_id}) do
+    Enum.find(activities, &(to_string(&1.id) == to_string(activity_id)))
+  end
+
+  defp selected_activity(_activities, _params), do: nil
+
   defp assign_source_form(socket) do
     assign(socket, :source_form, to_form(%{"source_id" => ""}, as: :budgeted_sheet_source))
   end
 
   defp assign_activity_form(socket, changeset) do
     assign(socket, :activity_form, to_form(changeset))
+  end
+
+  defp assign_executed_progress_form(socket, changeset) do
+    assign(socket, :executed_progress_form, to_form(changeset, as: :executed_progress))
   end
 
   defp assign_budgeted_sheet_form(socket, nil) do

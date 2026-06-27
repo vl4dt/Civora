@@ -8,13 +8,17 @@ defmodule Civora.Execution do
   alias Civora.Accounts.{Scope, User}
   alias Civora.Audit
   alias Civora.Budget.WorkItem
-  alias Civora.Execution.WorkActivity
+  alias Civora.Execution.{ExecutedProgressEntry, WorkActivity}
   alias Civora.Projects
   alias Civora.Projects.Project
   alias Civora.Repo
 
   def change_work_activity(%WorkActivity{} = activity, attrs \\ %{}) do
     WorkActivity.changeset(activity, attrs)
+  end
+
+  def change_executed_progress(%ExecutedProgressEntry{} = entry, attrs \\ %{}) do
+    ExecutedProgressEntry.changeset(entry, attrs)
   end
 
   def list_work_activities(%Scope{} = scope, %Project{} = project) do
@@ -67,6 +71,68 @@ defmodule Civora.Execution do
     end
   end
 
+  def list_executed_progress(%Scope{} = scope, %Project{} = project) do
+    with true <- Projects.authorized?(scope, project, :view) do
+      entries =
+        from(e in ExecutedProgressEntry,
+          where: e.project_id == ^project.id,
+          join: activity in assoc(e, :work_activity),
+          join: work_item in assoc(e, :work_item),
+          preload: [work_activity: activity, work_item: work_item],
+          order_by: [desc: e.inserted_at, desc: e.id]
+        )
+        |> Repo.all()
+
+      {:ok, entries}
+    else
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  def list_activity_executed_progress(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkActivity{} = activity
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %WorkActivity{} <- activity_for_project(project, activity.id) do
+      entries =
+        from(e in ExecutedProgressEntry,
+          where: e.project_id == ^project.id and e.work_activity_id == ^activity.id,
+          order_by: [desc: e.inserted_at, desc: e.id]
+        )
+        |> Repo.all()
+
+      {:ok, entries}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def list_work_item_executed_progress(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %WorkItem{} <- work_item_for_project(project, work_item.id) do
+      entries =
+        from(e in ExecutedProgressEntry,
+          where: e.project_id == ^project.id and e.work_item_id == ^work_item.id,
+          join: activity in assoc(e, :work_activity),
+          preload: [work_activity: activity],
+          order_by: [desc: e.inserted_at, desc: e.id]
+        )
+        |> Repo.all()
+
+      {:ok, entries}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
   def create_work_activity(
         %Scope{user: %User{} = actor} = scope,
         %Project{} = project,
@@ -102,8 +168,51 @@ defmodule Civora.Execution do
     end
   end
 
+  def create_executed_progress(
+        %Scope{user: %User{} = actor} = scope,
+        %Project{} = project,
+        %WorkActivity{} = activity,
+        attrs
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_activities),
+         %WorkActivity{} = stored_activity <- activity_for_project(project, activity.id) do
+      attrs =
+        attrs
+        |> put_project_id(project.id)
+        |> put_work_item_id(stored_activity.work_item_id)
+        |> put_work_activity_id(stored_activity.id)
+
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(
+        :executed_progress,
+        ExecutedProgressEntry.changeset(%ExecutedProgressEntry{}, attrs)
+      )
+      |> Ecto.Multi.insert(:audit_event, fn %{executed_progress: entry} ->
+        Audit.event_changeset(actor, project, %{
+          action: :executed_progress_created,
+          entity_type: "executed_progress",
+          entity_id: entry.id,
+          new_state: executed_progress_state(entry)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{executed_progress: entry}} -> {:ok, Repo.preload(entry, :work_activity)}
+        {:error, :executed_progress, changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
   defp work_item_for_project(%Project{id: project_id}, work_item_id) do
     Repo.get_by(WorkItem, id: work_item_id, project_id: project_id)
+  end
+
+  defp activity_for_project(%Project{id: project_id}, activity_id) do
+    Repo.get_by(WorkActivity, id: activity_id, project_id: project_id)
   end
 
   defp put_project_id(attrs, project_id) do
@@ -118,11 +227,27 @@ defmodule Civora.Execution do
       else: Map.put(attrs, :work_item_id, work_item_id)
   end
 
+  defp put_work_activity_id(attrs, activity_id) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1),
+      do: Map.put(attrs, "work_activity_id", activity_id),
+      else: Map.put(attrs, :work_activity_id, activity_id)
+  end
+
   defp work_activity_state(activity) do
     %{
       "work_item_id" => activity.work_item_id,
       "location_sector" => activity.location_sector,
       "description" => activity.description
+    }
+  end
+
+  defp executed_progress_state(entry) do
+    %{
+      "work_item_id" => entry.work_item_id,
+      "work_activity_id" => entry.work_activity_id,
+      "quantity" => Decimal.to_string(entry.quantity, :normal),
+      "location_sector" => entry.location_sector,
+      "payable" => entry.payable
     }
   end
 end

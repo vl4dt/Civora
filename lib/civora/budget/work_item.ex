@@ -13,6 +13,7 @@ defmodule Civora.Budget.WorkItem do
     belongs_to :project_phase, ProjectPhase
     has_one :budgeted_performance_sheet, Civora.Budget.BudgetedPerformanceSheet
     has_many :work_activities, Civora.Execution.WorkActivity
+    has_many :executed_progress_entries, Civora.Execution.ExecutedProgressEntry
 
     many_to_many :subcontracts, Civora.Subcontracts.Subcontract,
       join_through: "subcontract_work_items"
