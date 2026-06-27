@@ -2,6 +2,7 @@ defmodule Civora.AuditTest do
   use Civora.DataCase
 
   import Civora.AccountsFixtures
+  import Civora.ExecutionFixtures
   import Civora.ProjectsFixtures
 
   alias Civora.Accounts.Scope
@@ -31,6 +32,7 @@ defmodule Civora.AuditTest do
       project = project_fixture(scope)
       phase = project_phase_fixture(scope, project)
       work_item = work_item_fixture(scope, project, phase)
+      activity = work_activity_fixture(scope, project, work_item)
       member = user_fixture()
       assignment = assignment_fixture(scope, project, member, :consulta)
 
@@ -44,6 +46,7 @@ defmodule Civora.AuditTest do
 
       assert :project_phase_created in actions
       assert :work_item_created in actions
+      assert :work_activity_created in actions
       assert :project_assignment_created in actions
       assert :project_assignment_role_changed in actions
       assert :project_assignment_removed in actions
@@ -53,6 +56,9 @@ defmodule Civora.AuditTest do
 
       item_event = Enum.find(events, &(&1.action == :work_item_created))
       assert item_event.entity_id == work_item.id
+
+      activity_event = Enum.find(events, &(&1.action == :work_activity_created))
+      assert activity_event.entity_id == activity.id
 
       role_event = Enum.find(events, &(&1.action == :project_assignment_role_changed))
       assert role_event.previous_state["role"] == "consulta"

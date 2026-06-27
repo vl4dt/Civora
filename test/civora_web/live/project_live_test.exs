@@ -2,6 +2,7 @@ defmodule CivoraWeb.ProjectLiveTest do
   use CivoraWeb.ConnCase
 
   import Civora.AccountsFixtures
+  import Civora.ExecutionFixtures
   import Civora.ProjectsFixtures
   import Phoenix.LiveViewTest
 
@@ -281,6 +282,49 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ hd(snapshot.resources).name
       refute has_element?(view, "#budgeted-sheet-form")
       refute has_element?(view, "#budgeted-sheet-source-form")
+    end
+
+    test "creates and lists work activities from the work item detail", %{
+      conn: conn,
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase, %{description: "Repello fino"})
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ "Sin actividades registradas"
+      assert has_element?(view, "#work-activity-form")
+
+      html =
+        view
+        |> form("#work-activity-form",
+          work_activity: %{
+            location_sector: "Nivel 2 / fachada norte",
+            description: "Ejecutar repello fino en el tramo principal"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Actividad de obra agregada correctamente."
+      assert html =~ "Nivel 2 / fachada norte"
+      assert html =~ "Ejecutar repello fino"
+    end
+
+    test "read-only members inspect work activities without creation controls", %{scope: scope} do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      activity = work_activity_fixture(scope, project, work_item)
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+      viewer_conn = build_conn() |> log_in_user(viewer)
+
+      {:ok, view, html} = live(viewer_conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ activity.location_sector
+      refute has_element?(view, "#work-activity-form")
     end
   end
 

@@ -218,6 +218,7 @@ defmodule Civora.ProjectsTest do
                Projects.assign_user(director_scope, project, user_fixture(), :consulta)
 
       refute Projects.authorized?(director_scope, project, :manage_assignments)
+      assert Projects.authorized?(director_scope, project, :manage_activities)
     end
 
     test "authorization uses the assignment stored in the database", %{

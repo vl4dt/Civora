@@ -14,6 +14,7 @@ defmodule Civora.Projects.Project do
     has_many :phases, Civora.Projects.ProjectPhase
     has_many :work_items, Civora.Budget.WorkItem
     has_many :subcontracts, Civora.Subcontracts.Subcontract
+    has_many :work_activities, Civora.Execution.WorkActivity
     has_one :project_budget, Civora.Budget.ProjectBudget
 
     timestamps(type: :utc_datetime)

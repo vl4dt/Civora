@@ -3,12 +3,16 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   alias Civora.Budget
   alias Civora.Budget.{BudgetedPerformanceSheet, WorkItem}
+  alias Civora.Execution
+  alias Civora.Execution.WorkActivity
   alias Civora.Projects
 
   @impl true
   def mount(%{"project_id" => project_id, "id" => id}, _session, socket) do
     with {:ok, project} <- Projects.get_project(socket.assigns.current_scope, project_id),
          {:ok, item} <- Budget.get_work_item(socket.assigns.current_scope, project, id),
+         {:ok, activities} <-
+           Execution.list_work_item_activities(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
            Budget.get_budgeted_performance_sheet_for_work_item(
              socket.assigns.current_scope,
@@ -20,13 +24,19 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:page_title, item.description)
        |> assign(:project, project)
        |> assign(:work_item, item)
+       |> assign(:activities, activities)
        |> assign(:budgeted_sheet, budgeted_sheet)
        |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(:performance_sheet_options, performance_sheet_options(socket))
        |> assign(
+         :can_manage_activities,
+         Projects.authorized?(socket.assigns.current_scope, project, :manage_activities)
+       )
+       |> assign(
          :can_manage_budget,
          Projects.authorized?(socket.assigns.current_scope, project, :manage_budget)
        )
+       |> assign_activity_form(Execution.change_work_activity(%WorkActivity{}))
        |> assign_source_form()
        |> assign_budgeted_sheet_form(budgeted_sheet)}
     else
@@ -65,6 +75,67 @@ defmodule CivoraWeb.WorkItemLive.Show do
             <dd class="mt-1 text-xl font-semibold">{@work_item.unit}</dd>
           </div>
         </dl>
+
+        <section class="border-b border-base-300 py-7" aria-label="Actividades de obra">
+          <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div>
+              <p class="text-sm font-medium text-primary">Ejecucion</p>
+
+              <h2 class="mt-1 text-xl font-semibold">Actividades de obra</h2>
+
+              <p class="mt-2 text-sm text-base-content/65">
+                Sectores o frentes de trabajo asociados exclusivamente a esta partida.
+              </p>
+
+              <div
+                :if={@activities == []}
+                id="work-activities-empty"
+                class="mt-6 rounded-box border border-dashed border-base-300 p-6 text-sm text-base-content/60"
+              >
+                Sin actividades registradas para esta partida.
+              </div>
+
+              <div
+                :for={activity <- @activities}
+                id={"work-activity-#{activity.id}"}
+                class="mt-4 rounded-box border border-base-300 p-4"
+              >
+                <p class="font-semibold">{activity.location_sector}</p>
+                <p class="mt-2 text-sm leading-6 text-base-content/65">{activity.description}</p>
+              </div>
+            </div>
+
+            <aside :if={@can_manage_activities}>
+              <h3 class="text-base font-semibold">Agregar actividad</h3>
+
+              <.form
+                for={@activity_form}
+                id="work-activity-form"
+                phx-change="validate_activity"
+                phx-submit="save_activity"
+                class="mt-5 space-y-4"
+              >
+                <.input
+                  field={@activity_form[:location_sector]}
+                  label="Ubicacion o sector"
+                  placeholder="Nivel 2 / eje A-C"
+                  required
+                />
+                <.input
+                  field={@activity_form[:description]}
+                  type="textarea"
+                  label="Descripcion"
+                  rows="4"
+                  required
+                />
+
+                <.button variant="primary" class="w-full" phx-disable-with="Agregando...">
+                  <.icon name="hero-plus" class="size-4" /> Agregar actividad
+                </.button>
+              </.form>
+            </aside>
+          </div>
+        </section>
 
         <section class="py-7" aria-label="Ficha presupuestada">
           <div class="border-b border-base-300 pb-4">
@@ -228,6 +299,44 @@ defmodule CivoraWeb.WorkItemLive.Show do
   end
 
   @impl true
+  def handle_event("validate_activity", %{"work_activity" => params}, socket) do
+    changeset =
+      %WorkActivity{}
+      |> Execution.change_work_activity(
+        params
+        |> Map.put("project_id", socket.assigns.project.id)
+        |> Map.put("work_item_id", socket.assigns.work_item.id)
+      )
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign_activity_form(socket, changeset)}
+  end
+
+  def handle_event("save_activity", %{"work_activity" => params}, socket) do
+    case Execution.create_work_activity(
+           socket.assigns.current_scope,
+           socket.assigns.project,
+           socket.assigns.work_item,
+           params
+         ) do
+      {:ok, activity} ->
+        {:noreply,
+         socket
+         |> update(:activities, &(&1 ++ [activity]))
+         |> assign_activity_form(Execution.change_work_activity(%WorkActivity{}))
+         |> put_flash(:info, "Actividad de obra agregada correctamente.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_activity_form(socket, changeset)}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "No tienes permiso para agregar actividades.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "No se pudo agregar la actividad.")}
+    end
+  end
+
   def handle_event(
         "create_budgeted_sheet",
         %{"budgeted_sheet_source" => %{"source_id" => source_id}},
@@ -300,6 +409,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp assign_source_form(socket) do
     assign(socket, :source_form, to_form(%{"source_id" => ""}, as: :budgeted_sheet_source))
+  end
+
+  defp assign_activity_form(socket, changeset) do
+    assign(socket, :activity_form, to_form(changeset))
   end
 
   defp assign_budgeted_sheet_form(socket, nil) do
