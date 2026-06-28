@@ -63,8 +63,15 @@ defmodule Civora.ExecutionTest do
     end
 
     test "a work item can have many activities", context do
-      first = work_activity_fixture(context.scope, context.project, context.work_item)
-      second = work_activity_fixture(context.scope, context.project, context.work_item)
+      first =
+        work_activity_fixture(context.scope, context.project, context.work_item, %{
+          location_sector: "Nivel 1 / eje A"
+        })
+
+      second =
+        work_activity_fixture(context.scope, context.project, context.work_item, %{
+          location_sector: "Nivel 1 / eje B"
+        })
 
       assert {:ok, activities} =
                Execution.list_work_item_activities(
