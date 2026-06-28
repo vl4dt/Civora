@@ -82,6 +82,9 @@ Las actividades de obra vinculadas a partidas estan documentadas en
 El avance ejecutado no pagable registrado sobre actividades esta documentado en
 `docs/EXECUTED_PROGRESS.md`.
 
+El control de calidad basico que acepta o rechaza avance ejecutado esta documentado en
+`docs/QUALITY_CONTROL.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

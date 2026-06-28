@@ -363,6 +363,67 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ "No pagable"
     end
 
+    test "registers quality control for executed progress", %{
+      conn: conn,
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase, %{description: "Repello"})
+      activity = work_activity_fixture(scope, project, work_item)
+
+      progress =
+        executed_progress_fixture(scope, project, activity, %{
+          quantity: "8.0000",
+          location_sector: "Nivel 1"
+        })
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ "No pagable"
+      assert has_element?(view, "#quality-control-form-#{progress.id}")
+
+      html =
+        view
+        |> form("#quality-control-form-#{progress.id}",
+          quality_control: %{
+            executed_progress_entry_id: progress.id,
+            accepted_quantity: "5.5000",
+            rejection_reason: "Remate incompleto",
+            non_conformity_originated: "true"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Control de calidad registrado correctamente."
+      assert html =~ "Aceptado parcialmente"
+      assert html =~ "Aceptado: 5.5000 m2"
+      assert html =~ "Rechazado: 2.5000 m2"
+      assert html =~ "Origina no conformidad"
+      assert html =~ "Pagable"
+      refute has_element?(view, "#quality-control-form-#{progress.id}")
+    end
+
+    test "quality members can control quality without activity creation controls", %{
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      activity = work_activity_fixture(scope, project, work_item)
+      progress = executed_progress_fixture(scope, project, activity)
+      quality_user = user_fixture()
+      assignment_fixture(scope, project, quality_user, :calidad)
+      quality_conn = build_conn() |> log_in_user(quality_user)
+
+      {:ok, view, html} = live(quality_conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ Decimal.to_string(progress.quantity)
+      assert has_element?(view, "#quality-control-form-#{progress.id}")
+      refute has_element?(view, "#work-activity-form")
+      refute has_element?(view, "#executed-progress-form")
+    end
+
     test "read-only members inspect executed progress without registration controls", %{
       scope: scope
     } do
@@ -386,6 +447,7 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ Decimal.to_string(progress.quantity)
       assert html =~ progress.location_sector
       refute has_element?(view, "#executed-progress-form")
+      refute has_element?(view, "#quality-control-form-#{progress.id}")
     end
   end
 

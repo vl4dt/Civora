@@ -86,7 +86,8 @@ defmodule Civora.AuditTest do
       for {action, entity_type, entity_id} <- [
             {:budget_approved, "budget", 101},
             {:quality_accepted, "quality_control", 102},
-            {:estimate_created, "estimate", 103}
+            {:quality_rejected, "quality_control", 103},
+            {:estimate_created, "estimate", 104}
           ] do
         assert {:ok, %AuditEvent{action: ^action}} =
                  Audit.record_event(scope, project, %{

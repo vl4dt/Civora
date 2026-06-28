@@ -17,6 +17,7 @@ defmodule Civora.Audit.AuditEvent do
     :executed_progress_created,
     :budget_approved,
     :quality_accepted,
+    :quality_rejected,
     :estimate_created
   ]
 

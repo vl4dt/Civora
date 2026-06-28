@@ -21,6 +21,7 @@ proyecto o usuario con historial no puede eliminarse destruyendo su auditoria.
 - Creacion de subcontrato y sus partidas vinculadas.
 - Creacion de actividad de obra.
 - Registro de avance ejecutado.
+- Aceptacion o rechazo de calidad.
 - Asignacion de usuario al proyecto.
 - Cambio de rol por proyecto.
 - Retiro de una asignacion.
@@ -29,10 +30,11 @@ Estas acciones y su evento se escriben dentro de la misma transaccion.
 
 ## Contratos para milestones posteriores
 
-La taxonomia reserva las acciones `budget_approved`, `quality_accepted` y
-`estimate_created`. Los contextos de presupuesto, calidad y estimacion deben
+La taxonomia reserva las acciones `budget_approved` y `estimate_created`.
+Los contextos de presupuesto y estimacion deben
 insertar esos eventos mediante `Civora.Audit.event_changeset/3` dentro de la
-misma transaccion que aprueba, acepta o genera el registro de negocio.
+misma transaccion que aprueba o genera el registro de negocio. Calidad usa
+`quality_accepted` y `quality_rejected` para controles registrados en RS-28.
 
 ## Consulta
 

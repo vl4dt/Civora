@@ -23,6 +23,7 @@ defmodule Civora.Audit do
     executed_progress_created: "Avance ejecutado registrado",
     budget_approved: "Presupuesto aprobado",
     quality_accepted: "Calidad aceptada",
+    quality_rejected: "Calidad rechazada",
     estimate_created: "Estimacion creada"
   }
 
