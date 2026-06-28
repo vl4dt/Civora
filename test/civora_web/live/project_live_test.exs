@@ -400,6 +400,7 @@ defmodule CivoraWeb.ProjectLiveTest do
       assert html =~ "Aceptado: 5.5000 m2"
       assert html =~ "Rechazado: 2.5000 m2"
       assert html =~ "Origina no conformidad"
+      assert html =~ "Pagable: 5.5000 m2"
       assert html =~ "Pagable"
       refute has_element?(view, "#quality-control-form-#{progress.id}")
     end

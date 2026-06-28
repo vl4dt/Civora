@@ -21,6 +21,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
            Quality.list_work_item_quality_controls(socket.assigns.current_scope, project, item),
          {:ok, non_conformities} <-
            Quality.list_work_item_non_conformities(socket.assigns.current_scope, project, item),
+         {:ok, payable_progress} <-
+           Quality.get_work_item_payable_progress(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
            Budget.get_budgeted_performance_sheet_for_work_item(
              socket.assigns.current_scope,
@@ -36,6 +38,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:executed_progress_entries, executed_progress_entries)
        |> assign(:quality_controls_by_entry_id, quality_controls_by_entry_id(quality_controls))
        |> assign(:non_conformities, non_conformities)
+       |> assign(:payable_progress, payable_progress)
        |> assign(
          :non_conformities_by_quality_control_id,
          non_conformities_by_quality_control_id(non_conformities)
@@ -99,6 +102,46 @@ defmodule CivoraWeb.WorkItemLive.Show do
           </div>
         </dl>
 
+        <section class="border-b border-base-300 py-7" aria-label="Avance pagable">
+          <div class="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium text-primary">Calidad</p>
+              <h2 class="mt-1 text-xl font-semibold">Avance pagable</h2>
+            </div>
+
+            <span class="badge badge-success badge-outline">
+              Pagable: {@payable_progress.payable_quantity} {@work_item.unit}
+            </span>
+          </div>
+
+          <dl class="mt-5 grid gap-4 sm:grid-cols-4">
+            <div class="border-l-2 border-base-300 pl-4">
+              <dt class="text-sm text-base-content/60">Ejecutado</dt>
+              <dd class="mt-1 font-semibold">
+                {@payable_progress.executed_quantity} {@work_item.unit}
+              </dd>
+            </div>
+            <div class="border-l-2 border-success pl-4">
+              <dt class="text-sm text-base-content/60">Aceptado</dt>
+              <dd class="mt-1 font-semibold">
+                {@payable_progress.accepted_quantity} {@work_item.unit}
+              </dd>
+            </div>
+            <div class="border-l-2 border-warning pl-4">
+              <dt class="text-sm text-base-content/60">Rechazado</dt>
+              <dd class="mt-1 font-semibold">
+                {@payable_progress.rejected_quantity} {@work_item.unit}
+              </dd>
+            </div>
+            <div class="border-l-2 border-error pl-4">
+              <dt class="text-sm text-base-content/60">No conformidad abierta</dt>
+              <dd class="mt-1 font-semibold">
+                {@payable_progress.open_non_conformity_quantity} {@work_item.unit}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
         <section class="border-b border-base-300 py-7" aria-label="Actividades de obra">
           <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <div>
@@ -158,7 +201,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                         {entry.work_activity.location_sector}
                       </p>
                     </div>
-                    <span :if={!entry.payable} class="badge badge-outline">No pagable</span>
+                     <span :if={!entry.payable} class="badge badge-outline">No pagable</span>
                     <span :if={entry.payable} class="badge badge-success badge-outline">
                       Pagable
                     </span>
@@ -185,6 +228,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     >
                       Origina no conformidad
                     </span>
+
                     <span
                       :if={
                         non_conformity_for_control(@non_conformities_by_quality_control_id, control)
@@ -246,6 +290,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                           rows="3"
                         />
                       </div>
+
                       <.button
                         variant="primary"
                         class="sm:col-span-2"
@@ -320,15 +365,19 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p class="font-semibold">{non_conformity.defect}</p>
+
                       <p class="mt-1 text-sm text-base-content/65">
                         {non_conformity.affected_quantity} {@work_item.unit} afectados en {non_conformity.location_sector}
                       </p>
+
                       <p class="mt-1 text-sm text-base-content/65">
                         Responsable: {non_conformity.responsible_name}
                       </p>
+
                       <p :if={non_conformity.disposition} class="mt-1 text-sm text-base-content/65">
                         Disposicion: {non_conformity.disposition}
                       </p>
+
                       <p :if={non_conformity.closure_notes} class="mt-1 text-sm text-base-content/65">
                         Cierre: {non_conformity.closure_notes}
                       </p>
@@ -337,6 +386,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     <span :if={non_conformity.status == :open} class="badge badge-error badge-outline">
                       Abierta
                     </span>
+
                     <span
                       :if={non_conformity.status == :closed}
                       class="badge badge-success badge-outline"
@@ -489,7 +539,6 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     label="Disposicion"
                     rows="3"
                   />
-
                   <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
                     Registrar no conformidad
                   </.button>
@@ -551,7 +600,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   Copia de {@budgeted_sheet.source_performance_sheet.name}
                 </p>
               </div>
-              <span class="badge badge-outline">por {@budgeted_sheet.unit}</span>
+               <span class="badge badge-outline">por {@budgeted_sheet.unit}</span>
             </div>
 
             <p class="mt-4 text-sm leading-6 text-base-content/65">
@@ -727,6 +776,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
            |> assign_executed_progress_form(
              Execution.change_executed_progress(%ExecutedProgressEntry{})
            )
+           |> assign_payable_progress()
            |> put_flash(:info, "Avance ejecutado registrado correctamente.")}
 
         {:error, %Ecto.Changeset{} = changeset} ->
@@ -760,6 +810,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
              &Map.put(&1, control.executed_progress_entry_id, control)
            )
            |> update(:executed_progress_entries, &mark_entry_payable(&1, control))
+           |> assign_payable_progress()
            |> put_flash(:info, "Control de calidad registrado correctamente.")}
 
         {:error, %Ecto.Changeset{}} ->
@@ -809,6 +860,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
            &put_non_conformity_by_quality_control_id(&1, non_conformity)
          )
          |> assign_non_conformity_form(Quality.change_non_conformity(%NonConformity{}))
+         |> assign_payable_progress()
          |> put_flash(:info, "No conformidad registrada correctamente.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -844,6 +896,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
              :non_conformities_by_quality_control_id,
              &put_non_conformity_by_quality_control_id(&1, closed_non_conformity)
            )
+           |> assign_payable_progress()
            |> put_flash(:info, "No conformidad cerrada correctamente.")}
 
         {:error, %Ecto.Changeset{}} ->
@@ -1058,6 +1111,17 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp assign_non_conformity_form(socket, changeset) do
     assign(socket, :non_conformity_form, to_form(changeset))
+  end
+
+  defp assign_payable_progress(socket) do
+    case Quality.get_work_item_payable_progress(
+           socket.assigns.current_scope,
+           socket.assigns.project,
+           socket.assigns.work_item
+         ) do
+      {:ok, payable_progress} -> assign(socket, :payable_progress, payable_progress)
+      {:error, _reason} -> socket
+    end
   end
 
   defp assign_budgeted_sheet_form(socket, nil) do

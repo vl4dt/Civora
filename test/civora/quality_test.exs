@@ -332,4 +332,45 @@ defmodule Civora.QualityTest do
                context.work_item
              )
   end
+
+  test "calculates payable progress from quality accepted quantities only", context do
+    control =
+      quality_control_fixture(context.scope, context.project, context.progress, %{
+        accepted_quantity: "6.5000",
+        rejection_reason: "Acabado incompleto",
+        non_conformity_originated: true
+      })
+
+    _non_conformity =
+      non_conformity_fixture(context.scope, context.project, context.work_item, %{
+        quality_control_id: control.id,
+        defect: "Acabado incompleto",
+        location_sector: "Nivel 1",
+        responsible_name: "Obras Rivera"
+      })
+
+    assert {:ok, progress} =
+             Quality.get_work_item_payable_progress(
+               context.scope,
+               context.project,
+               context.work_item
+             )
+
+    assert Decimal.equal?(progress.executed_quantity, Decimal.new("10.0000"))
+    assert Decimal.equal?(progress.accepted_quantity, Decimal.new("6.5000"))
+    assert Decimal.equal?(progress.payable_quantity, Decimal.new("6.5000"))
+    assert Decimal.equal?(progress.rejected_quantity, Decimal.new("3.5000"))
+    assert Decimal.equal?(progress.open_non_conformity_quantity, Decimal.new("3.5000"))
+  end
+
+  test "payable progress summary requires project visibility", context do
+    outsider_scope = user_fixture() |> Scope.for_user()
+
+    assert {:error, :unauthorized} =
+             Quality.get_work_item_payable_progress(
+               outsider_scope,
+               context.project,
+               context.work_item
+             )
+  end
 end
