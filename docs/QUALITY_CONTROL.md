@@ -14,7 +14,7 @@ avance ejecutado.
   cantidad aceptada.
 - Si existe cantidad rechazada, el control debe conservar el motivo tecnico.
 - Un rechazo parcial o total puede marcarse como origen de una no conformidad.
-  RS-28 guarda esa decision; el ciclo propio de no conformidad queda para RS-29.
+  RS-28 guarda esa decision; RS-29 permite crear la no conformidad vinculada.
 - La creacion del control, la marca `payable` del avance ejecutado y el evento
   de auditoria se guardan en una sola transaccion.
 
@@ -26,6 +26,8 @@ avance ejecutado.
 
 Un avance ejecutado queda `payable = true` cuando su control acepta una cantidad
 mayor que cero. La cantidad pagable exacta vive en el control de calidad.
+Cuando existe una no conformidad abierta, la cantidad rechazada por ese control
+permanece como cantidad afectada no pagable.
 
 ## Acceso
 

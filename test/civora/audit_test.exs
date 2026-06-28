@@ -87,7 +87,9 @@ defmodule Civora.AuditTest do
             {:budget_approved, "budget", 101},
             {:quality_accepted, "quality_control", 102},
             {:quality_rejected, "quality_control", 103},
-            {:estimate_created, "estimate", 104}
+            {:non_conformity_created, "non_conformity", 104},
+            {:non_conformity_closed, "non_conformity", 105},
+            {:estimate_created, "estimate", 106}
           ] do
         assert {:ok, %AuditEvent{action: ^action}} =
                  Audit.record_event(scope, project, %{

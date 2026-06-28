@@ -18,6 +18,7 @@ defmodule Civora.Quality.QualityControl do
     belongs_to :project, Project
     belongs_to :work_item, WorkItem
     belongs_to :executed_progress_entry, ExecutedProgressEntry
+    has_one :non_conformity, Civora.Quality.NonConformity
 
     timestamps(type: :utc_datetime)
   end

@@ -7,6 +7,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
   alias Civora.Execution.{ExecutedProgressEntry, WorkActivity}
   alias Civora.Projects
   alias Civora.Quality
+  alias Civora.Quality.NonConformity
 
   @impl true
   def mount(%{"project_id" => project_id, "id" => id}, _session, socket) do
@@ -18,6 +19,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
            Execution.list_work_item_executed_progress(socket.assigns.current_scope, project, item),
          {:ok, quality_controls} <-
            Quality.list_work_item_quality_controls(socket.assigns.current_scope, project, item),
+         {:ok, non_conformities} <-
+           Quality.list_work_item_non_conformities(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
            Budget.get_budgeted_performance_sheet_for_work_item(
              socket.assigns.current_scope,
@@ -32,6 +35,11 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:activities, activities)
        |> assign(:executed_progress_entries, executed_progress_entries)
        |> assign(:quality_controls_by_entry_id, quality_controls_by_entry_id(quality_controls))
+       |> assign(:non_conformities, non_conformities)
+       |> assign(
+         :non_conformities_by_quality_control_id,
+         non_conformities_by_quality_control_id(non_conformities)
+       )
        |> assign(:budgeted_sheet, budgeted_sheet)
        |> assign(:budget_editable, Budget.budget_editable?(project))
        |> assign(:performance_sheet_options, performance_sheet_options(socket))
@@ -51,6 +59,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign_executed_progress_form(
          Execution.change_executed_progress(%ExecutedProgressEntry{})
        )
+       |> assign_non_conformity_form(Quality.change_non_conformity(%NonConformity{}))
        |> assign_source_form()
        |> assign_budgeted_sheet_form(budgeted_sheet)}
     else
@@ -161,18 +170,90 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   >
                     <% control = quality_control_for(@quality_controls_by_entry_id, entry) %>
                     <p class="font-medium">{quality_status_label(control.status)}</p>
+
                     <p class="mt-1 text-base-content/65">
                       Aceptado: {control.accepted_quantity} {@work_item.unit}. Rechazado: {control.rejected_quantity} {@work_item.unit}.
                     </p>
+
                     <p :if={control.rejection_reason} class="mt-1 text-base-content/65">
                       Motivo: {control.rejection_reason}
                     </p>
+
                     <span
                       :if={control.non_conformity_originated}
                       class="badge badge-warning badge-outline mt-3"
                     >
                       Origina no conformidad
                     </span>
+                    <span
+                      :if={
+                        non_conformity_for_control(@non_conformities_by_quality_control_id, control)
+                      }
+                      class="badge badge-error badge-outline mt-3"
+                    >
+                      No conformidad registrada
+                    </span>
+
+                    <.form
+                      :if={
+                        @can_manage_quality &&
+                          control.non_conformity_originated &&
+                          Decimal.gt?(control.rejected_quantity, Decimal.new("0")) &&
+                          is_nil(
+                            non_conformity_for_control(
+                              @non_conformities_by_quality_control_id,
+                              control
+                            )
+                          )
+                      }
+                      for={non_conformity_form(control, entry)}
+                      id={"non-conformity-from-quality-form-#{control.id}"}
+                      phx-submit="save_non_conformity"
+                      class="mt-4 grid gap-3 border-t border-base-300 pt-4 sm:grid-cols-2"
+                    >
+                      <input
+                        type="hidden"
+                        name="non_conformity[quality_control_id]"
+                        value={control.id}
+                      />
+                      <.input
+                        field={non_conformity_form(control, entry)[:defect]}
+                        type="textarea"
+                        label="Defecto"
+                        rows="3"
+                        required
+                      />
+                      <.input
+                        field={non_conformity_form(control, entry)[:location_sector]}
+                        label="Ubicacion"
+                        required
+                      />
+                      <.input
+                        field={non_conformity_form(control, entry)[:responsible_name]}
+                        label="Responsable"
+                        required
+                      />
+                      <.input
+                        field={non_conformity_form(control, entry)[:due_on]}
+                        type="date"
+                        label="Fecha limite"
+                      />
+                      <div class="sm:col-span-2">
+                        <.input
+                          field={non_conformity_form(control, entry)[:disposition]}
+                          type="textarea"
+                          label="Disposicion"
+                          rows="3"
+                        />
+                      </div>
+                      <.button
+                        variant="primary"
+                        class="sm:col-span-2"
+                        phx-disable-with="Registrando..."
+                      >
+                        Registrar no conformidad
+                      </.button>
+                    </.form>
                   </div>
 
                   <.form
@@ -212,43 +293,114 @@ defmodule CivoraWeb.WorkItemLive.Show do
                         rows="3"
                       />
                     </div>
+
                     <.button variant="primary" class="sm:col-span-2" phx-disable-with="Registrando...">
                       Registrar control de calidad
                     </.button>
                   </.form>
                 </div>
               </div>
-            </div>
-
-            <aside :if={@can_manage_activities}>
-              <h3 class="text-base font-semibold">Agregar actividad</h3>
-
-              <.form
-                for={@activity_form}
-                id="work-activity-form"
-                phx-change="validate_activity"
-                phx-submit="save_activity"
-                class="mt-5 space-y-4"
-              >
-                <.input
-                  field={@activity_form[:location_sector]}
-                  label="Ubicacion o sector"
-                  placeholder="Nivel 2 / eje A-C"
-                  required
-                />
-                <.input
-                  field={@activity_form[:description]}
-                  type="textarea"
-                  label="Descripcion"
-                  rows="4"
-                  required
-                />
-                <.button variant="primary" class="w-full" phx-disable-with="Agregando...">
-                  <.icon name="hero-plus" class="size-4" /> Agregar actividad
-                </.button>
-              </.form>
 
               <div class="mt-8 border-t border-base-300 pt-6">
+                <h3 class="text-base font-semibold">No conformidades</h3>
+
+                <div
+                  :if={@non_conformities == []}
+                  id="non-conformities-empty"
+                  class="mt-4 rounded-box border border-dashed border-base-300 p-4 text-sm text-base-content/60"
+                >
+                  Sin no conformidades registradas.
+                </div>
+
+                <div
+                  :for={non_conformity <- @non_conformities}
+                  id={"non-conformity-#{non_conformity.id}"}
+                  class="mt-4 rounded-box border border-base-300 p-4"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p class="font-semibold">{non_conformity.defect}</p>
+                      <p class="mt-1 text-sm text-base-content/65">
+                        {non_conformity.affected_quantity} {@work_item.unit} afectados en {non_conformity.location_sector}
+                      </p>
+                      <p class="mt-1 text-sm text-base-content/65">
+                        Responsable: {non_conformity.responsible_name}
+                      </p>
+                      <p :if={non_conformity.disposition} class="mt-1 text-sm text-base-content/65">
+                        Disposicion: {non_conformity.disposition}
+                      </p>
+                      <p :if={non_conformity.closure_notes} class="mt-1 text-sm text-base-content/65">
+                        Cierre: {non_conformity.closure_notes}
+                      </p>
+                    </div>
+
+                    <span :if={non_conformity.status == :open} class="badge badge-error badge-outline">
+                      Abierta
+                    </span>
+                    <span
+                      :if={non_conformity.status == :closed}
+                      class="badge badge-success badge-outline"
+                    >
+                      Cerrada
+                    </span>
+                  </div>
+
+                  <.form
+                    :if={@can_manage_quality && non_conformity.status == :open}
+                    for={close_non_conformity_form(non_conformity)}
+                    id={"close-non-conformity-form-#{non_conformity.id}"}
+                    phx-submit="close_non_conformity"
+                    class="mt-4 grid gap-3 border-t border-base-300 pt-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <input
+                      type="hidden"
+                      name="non_conformity_close[id]"
+                      value={non_conformity.id}
+                    />
+                    <.input
+                      field={close_non_conformity_form(non_conformity)[:closure_notes]}
+                      label="Notas de cierre"
+                      required
+                    />
+                    <.button variant="primary" phx-disable-with="Cerrando...">
+                      Cerrar
+                    </.button>
+                  </.form>
+                </div>
+              </div>
+            </div>
+
+            <aside :if={@can_manage_activities || @can_manage_quality}>
+              <div :if={@can_manage_activities}>
+                <h3 class="text-base font-semibold">Agregar actividad</h3>
+
+                <.form
+                  for={@activity_form}
+                  id="work-activity-form"
+                  phx-change="validate_activity"
+                  phx-submit="save_activity"
+                  class="mt-5 space-y-4"
+                >
+                  <.input
+                    field={@activity_form[:location_sector]}
+                    label="Ubicacion o sector"
+                    placeholder="Nivel 2 / eje A-C"
+                    required
+                  />
+                  <.input
+                    field={@activity_form[:description]}
+                    type="textarea"
+                    label="Descripcion"
+                    rows="4"
+                    required
+                  />
+                  <.button variant="primary" class="w-full" phx-disable-with="Agregando...">
+                    <.icon name="hero-plus" class="size-4" /> Agregar actividad
+                  </.button>
+                </.form>
+              </div>
+
+              <div :if={@can_manage_activities} class="mt-8 border-t border-base-300 pt-6">
                 <h3 class="text-base font-semibold">Registrar avance</h3>
 
                 <p :if={@activities == []} class="mt-4 text-sm leading-6 text-warning">
@@ -287,6 +439,59 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   />
                   <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
                     Registrar avance
+                  </.button>
+                </.form>
+              </div>
+
+              <div :if={@can_manage_quality} class="mt-8 border-t border-base-300 pt-6">
+                <h3 class="text-base font-semibold">Registrar no conformidad</h3>
+
+                <.form
+                  for={@non_conformity_form}
+                  id="non-conformity-form"
+                  phx-change="validate_non_conformity"
+                  phx-submit="save_non_conformity"
+                  class="mt-5 space-y-4"
+                >
+                  <.input
+                    field={@non_conformity_form[:defect]}
+                    type="textarea"
+                    label="Defecto"
+                    rows="3"
+                    required
+                  />
+                  <.input
+                    field={@non_conformity_form[:location_sector]}
+                    label="Ubicacion"
+                    required
+                  />
+                  <.input
+                    field={@non_conformity_form[:responsible_name]}
+                    label="Responsable"
+                    required
+                  />
+                  <.input
+                    field={@non_conformity_form[:affected_quantity]}
+                    type="number"
+                    label="Cantidad afectada"
+                    min="0.0001"
+                    step="0.0001"
+                    required
+                  />
+                  <.input
+                    field={@non_conformity_form[:due_on]}
+                    type="date"
+                    label="Fecha limite"
+                  />
+                  <.input
+                    field={@non_conformity_form[:disposition]}
+                    type="textarea"
+                    label="Disposicion"
+                    rows="3"
+                  />
+
+                  <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
+                    Registrar no conformidad
                   </.button>
                 </.form>
               </div>
@@ -575,6 +780,89 @@ defmodule CivoraWeb.WorkItemLive.Show do
     end
   end
 
+  def handle_event("validate_non_conformity", %{"non_conformity" => params}, socket) do
+    changeset =
+      %NonConformity{}
+      |> Quality.change_non_conformity(
+        params
+        |> Map.put("project_id", socket.assigns.project.id)
+        |> Map.put("work_item_id", socket.assigns.work_item.id)
+      )
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign_non_conformity_form(socket, changeset)}
+  end
+
+  def handle_event("save_non_conformity", %{"non_conformity" => params}, socket) do
+    case Quality.create_non_conformity(
+           socket.assigns.current_scope,
+           socket.assigns.project,
+           socket.assigns.work_item,
+           params
+         ) do
+      {:ok, non_conformity} ->
+        {:noreply,
+         socket
+         |> update(:non_conformities, &[non_conformity | &1])
+         |> update(
+           :non_conformities_by_quality_control_id,
+           &put_non_conformity_by_quality_control_id(&1, non_conformity)
+         )
+         |> assign_non_conformity_form(Quality.change_non_conformity(%NonConformity{}))
+         |> put_flash(:info, "No conformidad registrada correctamente.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_non_conformity_form(socket, changeset)}
+
+      {:error, :quality_control_without_rejection} ->
+        {:noreply,
+         put_flash(socket, :error, "El control de calidad no tiene cantidad rechazada.")}
+
+      {:error, :unauthorized} ->
+        {:noreply,
+         put_flash(socket, :error, "No tienes permiso para registrar no conformidades.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "No se pudo registrar la no conformidad.")}
+    end
+  end
+
+  def handle_event("close_non_conformity", %{"non_conformity_close" => params}, socket) do
+    with %NonConformity{} = non_conformity <-
+           selected_non_conformity(socket.assigns.non_conformities, params) do
+      case Quality.close_non_conformity(
+             socket.assigns.current_scope,
+             socket.assigns.project,
+             non_conformity,
+             params
+           ) do
+        {:ok, closed_non_conformity} ->
+          {:noreply,
+           socket
+           |> update(:non_conformities, &replace_non_conformity(&1, closed_non_conformity))
+           |> update(
+             :non_conformities_by_quality_control_id,
+             &put_non_conformity_by_quality_control_id(&1, closed_non_conformity)
+           )
+           |> put_flash(:info, "No conformidad cerrada correctamente.")}
+
+        {:error, %Ecto.Changeset{}} ->
+          {:noreply, put_flash(socket, :error, "Agrega notas de cierre validas.")}
+
+        {:error, :already_closed} ->
+          {:noreply, put_flash(socket, :error, "La no conformidad ya esta cerrada.")}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "No tienes permiso para cerrar no conformidades.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "No se pudo cerrar la no conformidad.")}
+      end
+    else
+      nil -> {:noreply, put_flash(socket, :error, "Selecciona una no conformidad valida.")}
+    end
+  end
+
   def handle_event(
         "create_budgeted_sheet",
         %{"budgeted_sheet_source" => %{"source_id" => source_id}},
@@ -669,6 +957,26 @@ defmodule CivoraWeb.WorkItemLive.Show do
     Map.get(controls_by_entry_id, entry.id)
   end
 
+  defp non_conformities_by_quality_control_id(non_conformities) do
+    non_conformities
+    |> Enum.reject(&is_nil(&1.quality_control_id))
+    |> Map.new(&{&1.quality_control_id, &1})
+  end
+
+  defp non_conformity_for_control(non_conformities_by_quality_control_id, control) do
+    Map.get(non_conformities_by_quality_control_id, control.id)
+  end
+
+  defp put_non_conformity_by_quality_control_id(map, %NonConformity{
+         quality_control_id: nil
+       }) do
+    map
+  end
+
+  defp put_non_conformity_by_quality_control_id(map, non_conformity) do
+    Map.put(map, non_conformity.quality_control_id, non_conformity)
+  end
+
   defp quality_control_form(entry) do
     to_form(
       %{
@@ -684,6 +992,45 @@ defmodule CivoraWeb.WorkItemLive.Show do
   defp quality_status_label(:accepted), do: "Aceptado por calidad"
   defp quality_status_label(:partially_accepted), do: "Aceptado parcialmente"
   defp quality_status_label(:rejected), do: "Rechazado por calidad"
+
+  defp non_conformity_form(control, entry) do
+    to_form(
+      %{
+        "quality_control_id" => control.id,
+        "defect" => control.rejection_reason || "",
+        "location_sector" => entry.location_sector,
+        "responsible_name" => "",
+        "due_on" => "",
+        "disposition" => ""
+      },
+      as: :non_conformity,
+      id: "non_conformity_quality_#{control.id}"
+    )
+  end
+
+  defp close_non_conformity_form(non_conformity) do
+    to_form(
+      %{
+        "id" => non_conformity.id,
+        "closure_notes" => ""
+      },
+      as: :non_conformity_close,
+      id: "non_conformity_close_#{non_conformity.id}"
+    )
+  end
+
+  defp selected_non_conformity(non_conformities, %{"id" => id}) do
+    Enum.find(non_conformities, &(to_string(&1.id) == to_string(id)))
+  end
+
+  defp selected_non_conformity(_non_conformities, _params), do: nil
+
+  defp replace_non_conformity(non_conformities, closed_non_conformity) do
+    Enum.map(non_conformities, fn
+      %NonConformity{id: id} when id == closed_non_conformity.id -> closed_non_conformity
+      non_conformity -> non_conformity
+    end)
+  end
 
   defp mark_entry_payable(entries, control) do
     payable = Decimal.gt?(control.accepted_quantity, Decimal.new("0"))
@@ -707,6 +1054,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp assign_executed_progress_form(socket, changeset) do
     assign(socket, :executed_progress_form, to_form(changeset, as: :executed_progress))
+  end
+
+  defp assign_non_conformity_form(socket, changeset) do
+    assign(socket, :non_conformity_form, to_form(changeset))
   end
 
   defp assign_budgeted_sheet_form(socket, nil) do

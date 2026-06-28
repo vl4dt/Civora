@@ -11,11 +11,15 @@ defmodule Civora.Quality do
   alias Civora.Execution.ExecutedProgressEntry
   alias Civora.Projects
   alias Civora.Projects.Project
-  alias Civora.Quality.QualityControl
+  alias Civora.Quality.{NonConformity, QualityControl}
   alias Civora.Repo
 
   def change_quality_control(%QualityControl{} = control, attrs \\ %{}) do
     QualityControl.changeset(control, attrs)
+  end
+
+  def change_non_conformity(%NonConformity{} = non_conformity, attrs \\ %{}) do
+    NonConformity.changeset(non_conformity, attrs)
   end
 
   def list_work_item_quality_controls(
@@ -35,6 +39,30 @@ defmodule Civora.Quality do
         |> Repo.all()
 
       {:ok, controls}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def list_work_item_non_conformities(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %WorkItem{} <- work_item_for_project(project, work_item.id) do
+      non_conformities =
+        from(n in NonConformity,
+          where: n.project_id == ^project.id and n.work_item_id == ^work_item.id,
+          left_join: c in assoc(n, :quality_control),
+          left_join: e in assoc(n, :executed_progress_entry),
+          preload: [quality_control: c, executed_progress_entry: e],
+          order_by: [asc: n.status, desc: n.inserted_at, desc: n.id]
+        )
+        |> Repo.all()
+
+      {:ok, non_conformities}
     else
       false -> {:error, :unauthorized}
       nil -> {:error, :not_found}
@@ -75,6 +103,85 @@ defmodule Civora.Quality do
       |> case do
         {:ok, %{quality_control: control}} -> {:ok, control}
         {:error, :quality_control, changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def create_non_conformity(
+        %Scope{user: %User{} = actor} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item,
+        attrs
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_quality),
+         %WorkItem{} = stored_work_item <- work_item_for_project(project, work_item.id),
+         {:ok, non_conformity_attrs} <- non_conformity_attrs(project, stored_work_item, attrs) do
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(
+        :non_conformity,
+        NonConformity.changeset(%NonConformity{}, non_conformity_attrs)
+      )
+      |> Ecto.Multi.insert(:audit_event, fn %{non_conformity: non_conformity} ->
+        Audit.event_changeset(actor, project, %{
+          action: :non_conformity_created,
+          entity_type: "non_conformity",
+          entity_id: non_conformity.id,
+          reason: non_conformity.defect,
+          new_state: non_conformity_state(non_conformity)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{non_conformity: non_conformity}} -> {:ok, non_conformity}
+        {:error, :non_conformity, changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def close_non_conformity(
+        %Scope{user: %User{} = actor} = scope,
+        %Project{} = project,
+        %NonConformity{} = non_conformity,
+        attrs
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_quality),
+         %NonConformity{} = stored_non_conformity <-
+           non_conformity_for_project(project, non_conformity.id),
+         :ok <- ensure_open(stored_non_conformity) do
+      previous_state = non_conformity_state(stored_non_conformity)
+
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(
+        :non_conformity,
+        NonConformity.close_changeset(
+          stored_non_conformity,
+          put_closed_at(attrs, DateTime.utc_now() |> DateTime.truncate(:second))
+        )
+      )
+      |> Ecto.Multi.insert(:audit_event, fn %{non_conformity: closed_non_conformity} ->
+        Audit.event_changeset(actor, project, %{
+          action: :non_conformity_closed,
+          entity_type: "non_conformity",
+          entity_id: closed_non_conformity.id,
+          reason: closed_non_conformity.closure_notes,
+          previous_state: previous_state,
+          new_state: non_conformity_state(closed_non_conformity)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{non_conformity: closed_non_conformity}} -> {:ok, closed_non_conformity}
+        {:error, :non_conformity, changeset, _changes} -> {:error, changeset}
         {:error, _operation, reason, _changes} -> {:error, reason}
       end
     else
@@ -134,6 +241,58 @@ defmodule Civora.Quality do
     if Decimal.gt?(accepted_quantity, 0), do: :quality_accepted, else: :quality_rejected
   end
 
+  defp non_conformity_attrs(project, work_item, attrs) do
+    quality_control_id =
+      Map.get(attrs, "quality_control_id") || Map.get(attrs, :quality_control_id)
+
+    with {:ok, attrs} <-
+           maybe_put_quality_control_attrs(project, work_item, attrs, quality_control_id),
+         {:ok, attrs} <- maybe_put_manual_affected_quantity(attrs) do
+      {:ok,
+       attrs
+       |> put_project_id(project.id)
+       |> put_work_item_id(work_item.id)}
+    end
+  end
+
+  defp maybe_put_quality_control_attrs(_project, _work_item, attrs, value)
+       when value in [nil, ""] do
+    {:ok, attrs}
+  end
+
+  defp maybe_put_quality_control_attrs(project, work_item, attrs, quality_control_id) do
+    case quality_control_for_work_item(project, work_item, quality_control_id) do
+      %QualityControl{rejected_quantity: rejected_quantity} = control ->
+        if Decimal.gt?(rejected_quantity, 0) do
+          {:ok,
+           attrs
+           |> put_attr(:quality_control_id, control.id)
+           |> put_attr(:executed_progress_entry_id, control.executed_progress_entry_id)
+           |> put_attr(:affected_quantity, rejected_quantity)}
+        else
+          {:error, :quality_control_without_rejection}
+        end
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  defp maybe_put_manual_affected_quantity(attrs) do
+    case Map.get(attrs, "affected_quantity") || Map.get(attrs, :affected_quantity) do
+      nil -> {:error, :affected_quantity_required}
+      "" -> {:error, :affected_quantity_required}
+      %Decimal{} -> {:ok, attrs}
+      value -> parse_decimal(value) |> manual_affected_quantity(attrs)
+    end
+  end
+
+  defp manual_affected_quantity({:ok, affected_quantity}, attrs) do
+    {:ok, put_attr(attrs, :affected_quantity, affected_quantity)}
+  end
+
+  defp manual_affected_quantity({:error, reason}, _attrs), do: {:error, reason}
+
   defp work_item_for_project(%Project{id: project_id}, work_item_id) do
     Repo.get_by(WorkItem, id: work_item_id, project_id: project_id)
   end
@@ -141,6 +300,21 @@ defmodule Civora.Quality do
   defp executed_progress_for_project(%Project{id: project_id}, entry_id) do
     Repo.get_by(ExecutedProgressEntry, id: entry_id, project_id: project_id)
   end
+
+  defp quality_control_for_work_item(project, work_item, quality_control_id) do
+    Repo.get_by(QualityControl,
+      id: quality_control_id,
+      project_id: project.id,
+      work_item_id: work_item.id
+    )
+  end
+
+  defp non_conformity_for_project(%Project{id: project_id}, non_conformity_id) do
+    Repo.get_by(NonConformity, id: non_conformity_id, project_id: project_id)
+  end
+
+  defp ensure_open(%NonConformity{status: :open}), do: :ok
+  defp ensure_open(%NonConformity{status: :closed}), do: {:error, :already_closed}
 
   defp put_project_id(attrs, project_id), do: put_attr(attrs, :project_id, project_id)
   defp put_work_item_id(attrs, work_item_id), do: put_attr(attrs, :work_item_id, work_item_id)
@@ -150,6 +324,8 @@ defmodule Civora.Quality do
   end
 
   defp put_calculated(attrs, key, value), do: put_attr(attrs, key, value)
+
+  defp put_closed_at(attrs, closed_at), do: put_attr(attrs, :closed_at, closed_at)
 
   defp put_attr(attrs, key, value) do
     if Enum.any?(Map.keys(attrs), &is_binary/1),
@@ -176,4 +352,26 @@ defmodule Civora.Quality do
       "non_conformity_originated" => control.non_conformity_originated
     }
   end
+
+  defp non_conformity_state(non_conformity) do
+    %{
+      "work_item_id" => non_conformity.work_item_id,
+      "quality_control_id" => non_conformity.quality_control_id,
+      "executed_progress_entry_id" => non_conformity.executed_progress_entry_id,
+      "defect" => non_conformity.defect,
+      "location_sector" => non_conformity.location_sector,
+      "responsible_name" => non_conformity.responsible_name,
+      "status" => to_string(non_conformity.status),
+      "affected_quantity" => Decimal.to_string(non_conformity.affected_quantity, :normal),
+      "disposition" => non_conformity.disposition,
+      "due_on" => date_to_string(non_conformity.due_on),
+      "closed_at" => datetime_to_string(non_conformity.closed_at)
+    }
+  end
+
+  defp date_to_string(nil), do: nil
+  defp date_to_string(%Date{} = date), do: Date.to_iso8601(date)
+
+  defp datetime_to_string(nil), do: nil
+  defp datetime_to_string(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
 end

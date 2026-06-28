@@ -18,6 +18,8 @@ defmodule Civora.Audit.AuditEvent do
     :budget_approved,
     :quality_accepted,
     :quality_rejected,
+    :non_conformity_created,
+    :non_conformity_closed,
     :estimate_created
   ]
 
