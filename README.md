@@ -85,6 +85,9 @@ El avance ejecutado no pagable registrado sobre actividades esta documentado en
 El control de calidad basico que acepta o rechaza avance ejecutado esta documentado en
 `docs/QUALITY_CONTROL.md`.
 
+Las no conformidades simples asociadas a partidas o controles de calidad estan
+documentadas en `docs/NON_CONFORMITIES.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

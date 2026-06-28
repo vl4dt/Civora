@@ -8,7 +8,7 @@ defmodule Civora.QualityTest do
   alias Civora.Accounts.Scope
   alias Civora.Audit.AuditEvent
   alias Civora.Quality
-  alias Civora.Quality.QualityControl
+  alias Civora.Quality.{NonConformity, QualityControl}
   alias Civora.Repo
 
   setup do
@@ -196,5 +196,140 @@ defmodule Civora.QualityTest do
     assert event.new_state["executed_progress_entry_id"] == context.progress.id
     assert event.new_state["status"] == "rejected"
     assert event.new_state["non_conformity_originated"]
+  end
+
+  test "creates a nonconformity from rejected quality quantity", context do
+    control =
+      quality_control_fixture(context.scope, context.project, context.progress, %{
+        accepted_quantity: "6.5000",
+        rejection_reason: "Acabado incompleto",
+        non_conformity_originated: true
+      })
+
+    assert {:ok, %NonConformity{} = non_conformity} =
+             Quality.create_non_conformity(
+               context.scope,
+               context.project,
+               context.work_item,
+               %{
+                 quality_control_id: control.id,
+                 defect: "Acabado incompleto",
+                 location_sector: "Nivel 1 / eje A",
+                 responsible_name: "Subcontratista Rivera",
+                 due_on: "2026-07-05",
+                 disposition: "Corregir acabado y solicitar reinspeccion"
+               }
+             )
+
+    assert non_conformity.status == :open
+    assert non_conformity.quality_control_id == control.id
+    assert non_conformity.executed_progress_entry_id == context.progress.id
+    assert Decimal.equal?(non_conformity.affected_quantity, Decimal.new("3.5000"))
+    assert Repo.reload!(context.progress).payable
+  end
+
+  test "creates and lists a work item nonconformity without executed progress", context do
+    assert {:ok, non_conformity} =
+             Quality.create_non_conformity(
+               context.scope,
+               context.project,
+               context.work_item,
+               %{
+                 defect: "Despostillado en arista",
+                 location_sector: "Nivel 2",
+                 responsible_name: "Equipo interno",
+                 affected_quantity: "1.0000"
+               }
+             )
+
+    assert is_nil(non_conformity.quality_control_id)
+    assert is_nil(non_conformity.executed_progress_entry_id)
+
+    assert {:ok, [listed]} =
+             Quality.list_work_item_non_conformities(
+               context.scope,
+               context.project,
+               context.work_item
+             )
+
+    assert listed.id == non_conformity.id
+  end
+
+  test "does not create a nonconformity from accepted quality control", context do
+    control = quality_control_fixture(context.scope, context.project, context.progress)
+
+    assert {:error, :quality_control_without_rejection} =
+             Quality.create_non_conformity(
+               context.scope,
+               context.project,
+               context.work_item,
+               %{
+                 quality_control_id: control.id,
+                 defect: "No debe persistirse",
+                 location_sector: "Sector aceptado",
+                 responsible_name: "Subcontratista"
+               }
+             )
+  end
+
+  test "quality role can close a nonconformity and close event is audited", context do
+    non_conformity =
+      non_conformity_fixture(context.scope, context.project, context.work_item, %{
+        defect: "Fisura",
+        affected_quantity: "2.0000"
+      })
+
+    quality_user = user_fixture()
+    assignment_fixture(context.scope, context.project, quality_user, :calidad)
+    quality_scope = Scope.for_user(quality_user)
+
+    assert {:ok, closed} =
+             Quality.close_non_conformity(
+               quality_scope,
+               context.project,
+               non_conformity,
+               %{closure_notes: "Reinspeccion aceptada"}
+             )
+
+    assert closed.status == :closed
+    assert closed.closed_at
+    assert closed.closure_notes == "Reinspeccion aceptada"
+
+    event = Repo.get_by!(AuditEvent, action: :non_conformity_closed, entity_id: closed.id)
+    assert event.actor_id == quality_user.id
+    assert event.previous_state["status"] == "open"
+    assert event.new_state["status"] == "closed"
+  end
+
+  test "read-only members cannot create or close nonconformities", context do
+    non_conformity = non_conformity_fixture(context.scope, context.project, context.work_item)
+    viewer = user_fixture()
+    assignment_fixture(context.scope, context.project, viewer, :consulta)
+    viewer_scope = Scope.for_user(viewer)
+
+    assert {:error, :unauthorized} =
+             Quality.create_non_conformity(
+               viewer_scope,
+               context.project,
+               context.work_item,
+               %{
+                 defect: "No autorizado",
+                 location_sector: "Nivel 1",
+                 responsible_name: "Subcontratista",
+                 affected_quantity: "1.0000"
+               }
+             )
+
+    assert {:error, :unauthorized} =
+             Quality.close_non_conformity(viewer_scope, context.project, non_conformity, %{
+               closure_notes: "No autorizado"
+             })
+
+    assert {:ok, [_]} =
+             Quality.list_work_item_non_conformities(
+               viewer_scope,
+               context.project,
+               context.work_item
+             )
   end
 end

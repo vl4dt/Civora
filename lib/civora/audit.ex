@@ -24,6 +24,8 @@ defmodule Civora.Audit do
     budget_approved: "Presupuesto aprobado",
     quality_accepted: "Calidad aceptada",
     quality_rejected: "Calidad rechazada",
+    non_conformity_created: "No conformidad creada",
+    non_conformity_closed: "No conformidad cerrada",
     estimate_created: "Estimacion creada"
   }
 

@@ -40,6 +40,10 @@ RS-27 permite que administradores y directores de proyecto registren avance
 ejecutado no pagable sobre actividades. Todos los miembros asignados pueden
 consultarlo.
 
+RS-28 y RS-29 permiten que administradores, directores de proyecto y miembros
+con rol `calidad` registren controles de calidad, no conformidades y cierres de
+no conformidad. Todos los miembros asignados pueden consultarlos.
+
 ## Integracion con proyectos
 
 La tabla `projects` contiene nombre, cliente/referencia, estado y descripcion.

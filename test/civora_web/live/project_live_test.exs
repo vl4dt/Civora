@@ -424,6 +424,74 @@ defmodule CivoraWeb.ProjectLiveTest do
       refute has_element?(view, "#executed-progress-form")
     end
 
+    test "registers and closes a nonconformity from rejected quality", %{
+      conn: conn,
+      scope: scope
+    } do
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase, %{description: "Muro observado"})
+      activity = work_activity_fixture(scope, project, work_item)
+
+      progress =
+        executed_progress_fixture(scope, project, activity, %{
+          quantity: "7.0000",
+          location_sector: "Nivel 1 / muro norte"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      html =
+        view
+        |> form("#quality-control-form-#{progress.id}",
+          quality_control: %{
+            executed_progress_entry_id: progress.id,
+            accepted_quantity: "4.0000",
+            rejection_reason: "Fisuras en juntas",
+            non_conformity_originated: "true"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Origina no conformidad"
+      [control] = Civora.Repo.all(Civora.Quality.QualityControl)
+      assert has_element?(view, "#non-conformity-from-quality-form-#{control.id}")
+
+      html =
+        view
+        |> form("#non-conformity-from-quality-form-#{control.id}",
+          non_conformity: %{
+            quality_control_id: control.id,
+            defect: "Fisuras en juntas",
+            location_sector: "Nivel 1 / muro norte",
+            responsible_name: "Obras Rivera",
+            disposition: "Rehacer juntas afectadas"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "No conformidad registrada correctamente."
+      assert html =~ "Fisuras en juntas"
+      assert html =~ "3.0000 m2 afectados"
+      assert html =~ "Abierta"
+
+      [non_conformity] = Civora.Repo.all(Civora.Quality.NonConformity)
+
+      html =
+        view
+        |> form("#close-non-conformity-form-#{non_conformity.id}",
+          non_conformity_close: %{
+            id: non_conformity.id,
+            closure_notes: "Correccion reinspeccionada y aceptada"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "No conformidad cerrada correctamente."
+      assert html =~ "Cerrada"
+      assert html =~ "Correccion reinspeccionada y aceptada"
+    end
+
     test "read-only members inspect executed progress without registration controls", %{
       scope: scope
     } do

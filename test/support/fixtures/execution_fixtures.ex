@@ -36,4 +36,20 @@ defmodule Civora.ExecutionFixtures do
     {:ok, control} = Civora.Quality.create_quality_control(scope, project, entry, attrs)
     control
   end
+
+  def non_conformity_fixture(scope, project, work_item, attrs \\ %{}) do
+    attrs =
+      Enum.into(attrs, %{
+        defect: "Defecto de prueba",
+        location_sector: "Sector con no conformidad",
+        responsible_name: "Subcontratista de prueba",
+        affected_quantity: "1.2500",
+        disposition: "Corregir y solicitar reinspeccion"
+      })
+
+    {:ok, non_conformity} =
+      Civora.Quality.create_non_conformity(scope, project, work_item, attrs)
+
+    non_conformity
+  end
 end
