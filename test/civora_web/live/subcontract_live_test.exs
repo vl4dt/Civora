@@ -2,6 +2,7 @@ defmodule CivoraWeb.SubcontractLiveTest do
   use CivoraWeb.ConnCase
 
   import Civora.AccountsFixtures
+  import Civora.ExecutionFixtures
   import Civora.ProjectsFixtures
   import Civora.SubcontractsFixtures
   import Phoenix.LiveViewTest
@@ -82,6 +83,54 @@ defmodule CivoraWeb.SubcontractLiveTest do
       live(viewer_conn, ~p"/projects/#{project}/subcontracts/#{subcontract}")
 
     assert detail =~ counterparty.name
+  end
+
+  test "shows executed versus payable progress by subcontract work item", %{
+    conn: conn,
+    scope: scope,
+    project: project,
+    work_items: [first_item, second_item] = work_items,
+    counterparty: counterparty
+  } do
+    subcontract = subcontract_fixture(scope, project, work_items, counterparty)
+    first_activity = work_activity_fixture(scope, project, first_item)
+    second_activity = work_activity_fixture(scope, project, second_item)
+
+    first_progress =
+      executed_progress_fixture(scope, project, first_activity, %{
+        quantity: "8.0000",
+        location_sector: "Nivel 1"
+      })
+
+    _second_progress =
+      executed_progress_fixture(scope, project, second_activity, %{
+        quantity: "2.0000",
+        location_sector: "Nivel 2"
+      })
+
+    control =
+      quality_control_fixture(scope, project, first_progress, %{
+        accepted_quantity: "5.0000",
+        rejection_reason: "Remate incompleto",
+        non_conformity_originated: true
+      })
+
+    _non_conformity =
+      non_conformity_fixture(scope, project, first_item, %{
+        quality_control_id: control.id,
+        defect: "Remate incompleto",
+        location_sector: "Nivel 1",
+        responsible_name: "Obras Rivera"
+      })
+
+    {:ok, _show, html} = live(conn, ~p"/projects/#{project}/subcontracts/#{subcontract}")
+
+    assert html =~ "Avance ejecutado vs pagable"
+    assert html =~ "Pagable: 5.0000"
+    assert html =~ "Rechazado"
+    assert html =~ "3.0000"
+    assert html =~ "Ejecutado: 8.0000 m2 / Pagable: 5.0000 m2"
+    assert html =~ "Ejecutado: 2.0000 m2 / Pagable: 0.0000 m2"
   end
 
   test "users outside the project cannot list or open subcontracts", %{

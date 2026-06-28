@@ -69,6 +69,85 @@ defmodule Civora.Quality do
     end
   end
 
+  def get_work_item_payable_progress(
+        %Scope{} = scope,
+        %Project{} = project,
+        %WorkItem{} = work_item
+      ) do
+    with {:ok, summaries} <- list_work_items_payable_progress(scope, project, [work_item]) do
+      {:ok, Map.fetch!(summaries, work_item.id)}
+    end
+  end
+
+  def list_work_items_payable_progress(%Scope{} = scope, %Project{} = project, work_items)
+      when is_list(work_items) do
+    work_item_ids = Enum.map(work_items, & &1.id)
+
+    with true <- Projects.authorized?(scope, project, :view),
+         :ok <- work_items_belong_to_project(project, work_item_ids) do
+      executed_by_work_item =
+        from(e in ExecutedProgressEntry,
+          where: e.project_id == ^project.id and e.work_item_id in ^work_item_ids,
+          group_by: e.work_item_id,
+          select: {e.work_item_id, sum(e.quantity)}
+        )
+        |> Repo.all()
+        |> Map.new()
+
+      quality_by_work_item =
+        from(c in QualityControl,
+          where: c.project_id == ^project.id and c.work_item_id in ^work_item_ids,
+          group_by: c.work_item_id,
+          select: {c.work_item_id, sum(c.accepted_quantity), sum(c.rejected_quantity)}
+        )
+        |> Repo.all()
+        |> Map.new(fn {work_item_id, accepted_quantity, rejected_quantity} ->
+          {work_item_id,
+           %{
+             accepted_quantity: accepted_quantity || zero(),
+             rejected_quantity: rejected_quantity || zero()
+           }}
+        end)
+
+      open_non_conformities_by_work_item =
+        from(n in NonConformity,
+          where:
+            n.project_id == ^project.id and n.work_item_id in ^work_item_ids and
+              n.status == :open,
+          group_by: n.work_item_id,
+          select: {n.work_item_id, sum(n.affected_quantity)}
+        )
+        |> Repo.all()
+        |> Map.new()
+
+      summaries =
+        Map.new(work_items, fn work_item ->
+          quality =
+            Map.get(quality_by_work_item, work_item.id, %{
+              accepted_quantity: zero(),
+              rejected_quantity: zero()
+            })
+
+          summary = %{
+            work_item_id: work_item.id,
+            executed_quantity: Map.get(executed_by_work_item, work_item.id, zero()),
+            payable_quantity: quality.accepted_quantity,
+            accepted_quantity: quality.accepted_quantity,
+            rejected_quantity: quality.rejected_quantity,
+            open_non_conformity_quantity:
+              Map.get(open_non_conformities_by_work_item, work_item.id, zero())
+          }
+
+          {work_item.id, summary}
+        end)
+
+      {:ok, summaries}
+    else
+      false -> {:error, :unauthorized}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   def create_quality_control(
         %Scope{user: %User{} = actor} = scope,
         %Project{} = project,
@@ -297,6 +376,19 @@ defmodule Civora.Quality do
     Repo.get_by(WorkItem, id: work_item_id, project_id: project_id)
   end
 
+  defp work_items_belong_to_project(_project, []), do: :ok
+
+  defp work_items_belong_to_project(%Project{id: project_id}, work_item_ids) do
+    count =
+      Repo.aggregate(
+        from(w in WorkItem, where: w.project_id == ^project_id and w.id in ^work_item_ids),
+        :count,
+        :id
+      )
+
+    if count == length(Enum.uniq(work_item_ids)), do: :ok, else: {:error, :not_found}
+  end
+
   defp executed_progress_for_project(%Project{id: project_id}, entry_id) do
     Repo.get_by(ExecutedProgressEntry, id: entry_id, project_id: project_id)
   end
@@ -374,4 +466,6 @@ defmodule Civora.Quality do
 
   defp datetime_to_string(nil), do: nil
   defp datetime_to_string(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+
+  defp zero, do: Decimal.new("0.0000")
 end
