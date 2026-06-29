@@ -10,6 +10,7 @@ RS-31 crea el primer flujo de estimacion de subcontrato a partir de avance pagab
 - Las lineas deben corresponder a partidas vinculadas al subcontrato.
 - La cantidad estimada viene de la cantidad aceptada por calidad.
 - El precio unitario y el monto de cada linea quedan congelados al generar la estimacion.
+- El monto acumulado estimado no puede exceder el monto contractual vigente del subcontrato.
 - La estimacion se crea con estado `generated`.
 - La estimacion, sus lineas y el evento `estimate_created` se guardan en una sola transaccion.
 

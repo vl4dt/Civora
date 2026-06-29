@@ -146,6 +146,36 @@ defmodule CivoraWeb.SubcontractLiveTest do
     assert html =~ "No hay cantidades pagables pendientes de estimar."
   end
 
+  test "explains when selected payable progress exceeds contract balance", %{
+    conn: conn,
+    scope: scope,
+    project: project,
+    work_items: [work_item | _] = work_items,
+    counterparty: counterparty
+  } do
+    subcontract =
+      subcontract_fixture(scope, project, work_items, counterparty, %{
+        current_contract_amount: "100.0000"
+      })
+
+    activity = work_activity_fixture(scope, project, work_item)
+    progress = executed_progress_fixture(scope, project, activity, %{quantity: "60.0000"})
+    control = quality_control_fixture(scope, project, progress, %{accepted_quantity: "60.0000"})
+
+    {:ok, show, html} = live(conn, ~p"/projects/#{project}/subcontracts/#{subcontract}")
+    assert html =~ "Saldo disponible: 100.0000"
+
+    html =
+      show
+      |> form("#subcontract-estimate-form",
+        subcontract_estimate: %{quality_control_ids: [control.id]}
+      )
+      |> render_submit()
+
+    assert html =~ "La estimacion supera el saldo disponible del subcontrato."
+    assert html =~ "Disponible: 100.0000"
+  end
+
   test "users outside the project cannot list or open subcontracts", %{
     scope: scope,
     project: project,

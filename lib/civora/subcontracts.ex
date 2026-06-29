@@ -125,6 +125,28 @@ defmodule Civora.Subcontracts do
     end
   end
 
+  def get_subcontract_estimate_balance(
+        %Scope{} = scope,
+        %Project{} = project,
+        %Subcontract{} = subcontract
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %Subcontract{} = stored_subcontract <- subcontract_for_project(project, subcontract.id) do
+      estimated_amount = estimated_amount_for(stored_subcontract)
+
+      {:ok,
+       %{
+         current_contract_amount: stored_subcontract.current_contract_amount,
+         estimated_amount: estimated_amount,
+         available_balance:
+           Decimal.sub(stored_subcontract.current_contract_amount, estimated_amount)
+       }}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
   def list_estimable_payable_progress(
         %Scope{} = scope,
         %Project{} = project,
@@ -210,6 +232,34 @@ defmodule Civora.Subcontracts do
       amount = total_amount(line_attrs)
 
       Ecto.Multi.new()
+      |> Ecto.Multi.run(:contract_balance, fn repo, _changes ->
+        stored_subcontract =
+          from(s in Subcontract, where: s.id == ^stored_subcontract.id, lock: "FOR UPDATE")
+          |> repo.one!()
+
+        estimated_amount = estimated_amount_for(repo, stored_subcontract)
+
+        available_balance =
+          Decimal.sub(stored_subcontract.current_contract_amount, estimated_amount)
+
+        if Decimal.lte?(amount, available_balance) do
+          {:ok,
+           %{
+             current_contract_amount: stored_subcontract.current_contract_amount,
+             estimated_amount: estimated_amount,
+             available_balance: available_balance
+           }}
+        else
+          {:error,
+           {:estimate_exceeds_contract_balance,
+            %{
+              current_contract_amount: stored_subcontract.current_contract_amount,
+              estimated_amount: estimated_amount,
+              available_balance: available_balance,
+              estimate_amount: amount
+            }}}
+        end
+      end)
       |> Ecto.Multi.insert(
         :estimate,
         SubcontractEstimate.changeset(%SubcontractEstimate{}, %{
@@ -348,6 +398,18 @@ defmodule Civora.Subcontracts do
     else
       {:error, :invalid_quality_control_ids}
     end
+  end
+
+  defp estimated_amount_for(%Subcontract{} = subcontract) do
+    estimated_amount_for(Repo, subcontract)
+  end
+
+  defp estimated_amount_for(repo, %Subcontract{} = subcontract) do
+    from(e in SubcontractEstimate,
+      where: e.project_id == ^subcontract.project_id and e.subcontract_id == ^subcontract.id,
+      select: coalesce(sum(e.amount), 0)
+    )
+    |> repo.one()
   end
 
   defp parse_id(id) when is_integer(id), do: {:ok, id}
