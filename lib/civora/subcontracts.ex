@@ -10,8 +10,16 @@ defmodule Civora.Subcontracts do
   alias Civora.Budget.WorkItem
   alias Civora.Projects
   alias Civora.Projects.Project
+  alias Civora.Quality.QualityControl
   alias Civora.Repo
-  alias Civora.Subcontracts.{Counterparty, Subcontract, SubcontractWorkItem}
+
+  alias Civora.Subcontracts.{
+    Counterparty,
+    Subcontract,
+    SubcontractEstimate,
+    SubcontractEstimateLine,
+    SubcontractWorkItem
+  }
 
   def available_counterparty_roles, do: Counterparty.roles()
 
@@ -48,6 +56,10 @@ defmodule Civora.Subcontracts do
 
   def change_subcontract(%Subcontract{} = subcontract, attrs \\ %{}) do
     Subcontract.changeset(subcontract, attrs)
+  end
+
+  def change_subcontract_estimate(%SubcontractEstimate{} = estimate, attrs \\ %{}) do
+    SubcontractEstimate.changeset(estimate, attrs)
   end
 
   def list_subcontractor_counterparties(%Scope{user: %User{}}) do
@@ -88,6 +100,51 @@ defmodule Civora.Subcontracts do
       end
     else
       false -> {:error, :unauthorized}
+    end
+  end
+
+  def list_subcontract_estimates(
+        %Scope{} = scope,
+        %Project{} = project,
+        %Subcontract{} = subcontract
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %Subcontract{} <- subcontract_for_project(project, subcontract.id) do
+      estimates =
+        from(e in SubcontractEstimate,
+          where: e.project_id == ^project.id and e.subcontract_id == ^subcontract.id,
+          preload: [lines: [:work_item, :quality_control]],
+          order_by: [desc: e.inserted_at, desc: e.id]
+        )
+        |> Repo.all()
+
+      {:ok, estimates}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def list_estimable_payable_progress(
+        %Scope{} = scope,
+        %Project{} = project,
+        %Subcontract{} = subcontract
+      ) do
+    with true <- Projects.authorized?(scope, project, :view),
+         %Subcontract{} = stored_subcontract <- subcontract_for_project(project, subcontract.id) do
+      rows =
+        stored_subcontract
+        |> estimable_payable_progress_query(project)
+        |> Repo.all()
+
+      {:ok,
+       add_estimate_amounts(
+         rows,
+         unit_price_for(stored_subcontract.work_items, stored_subcontract)
+       )}
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
     end
   end
 
@@ -138,6 +195,71 @@ defmodule Civora.Subcontracts do
     end
   end
 
+  def create_subcontract_estimate(
+        %Scope{user: %User{} = actor} = scope,
+        %Project{} = project,
+        %Subcontract{} = subcontract,
+        attrs
+      ) do
+    with true <- Projects.authorized?(scope, project, :manage_estimates),
+         %Subcontract{} = stored_subcontract <- subcontract_for_project(project, subcontract.id),
+         {:ok, selected_ids} <- selected_quality_control_ids(attrs),
+         {:ok, rows} <- selected_estimable_rows(project, stored_subcontract, selected_ids) do
+      unit_price = unit_price_for(stored_subcontract.work_items, stored_subcontract)
+      line_attrs = estimate_line_attrs(project, stored_subcontract, rows, unit_price)
+      amount = total_amount(line_attrs)
+
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(
+        :estimate,
+        SubcontractEstimate.changeset(%SubcontractEstimate{}, %{
+          project_id: project.id,
+          subcontract_id: stored_subcontract.id,
+          status: :generated,
+          amount: amount
+        })
+      )
+      |> Ecto.Multi.insert_all(:lines, SubcontractEstimateLine, fn %{estimate: estimate} ->
+        now = DateTime.utc_now(:second)
+
+        Enum.map(line_attrs, fn attrs ->
+          attrs
+          |> Map.put(:subcontract_estimate_id, estimate.id)
+          |> Map.put(:inserted_at, now)
+          |> Map.put(:updated_at, now)
+        end)
+      end)
+      |> Ecto.Multi.insert(:audit_event, fn %{estimate: estimate} ->
+        Audit.event_changeset(actor, project, %{
+          action: :estimate_created,
+          entity_type: "subcontract_estimate",
+          entity_id: estimate.id,
+          new_state: subcontract_estimate_state(estimate, line_attrs)
+        })
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{estimate: estimate}} ->
+          estimate =
+            SubcontractEstimate
+            |> Repo.get!(estimate.id)
+            |> Repo.preload(lines: [:work_item, :quality_control])
+
+          {:ok, estimate}
+
+        {:error, :estimate, changeset, _changes} ->
+          {:error, changeset}
+
+        {:error, _operation, reason, _changes} ->
+          {:error, reason}
+      end
+    else
+      false -> {:error, :unauthorized}
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp validate_subcontract_inputs(
          _repo,
          %Ecto.Changeset{valid?: false} = changeset,
@@ -168,6 +290,134 @@ defmodule Civora.Subcontracts do
     else
       {:error, changeset}
     end
+  end
+
+  defp subcontract_for_project(%Project{id: project_id}, subcontract_id) do
+    from(s in Subcontract,
+      where: s.id == ^subcontract_id and s.project_id == ^project_id,
+      preload: [:counterparty, :work_items]
+    )
+    |> Repo.one()
+  end
+
+  defp estimable_payable_progress_query(%Subcontract{} = subcontract, %Project{} = project) do
+    from(c in QualityControl,
+      where: c.project_id == ^project.id and c.accepted_quantity > 0,
+      join: link in SubcontractWorkItem,
+      on: link.subcontract_id == ^subcontract.id and link.work_item_id == c.work_item_id,
+      join: w in assoc(c, :work_item),
+      join: e in assoc(c, :executed_progress_entry),
+      left_join: line in assoc(c, :subcontract_estimate_line),
+      where: is_nil(line.id),
+      preload: [work_item: w, executed_progress_entry: e],
+      order_by: [asc: w.description, asc: c.inserted_at, asc: c.id]
+    )
+  end
+
+  defp selected_quality_control_ids(attrs) do
+    attrs
+    |> fetch_attr(:quality_control_ids)
+    |> case do
+      ids when is_list(ids) ->
+        ids
+        |> Enum.reject(&(&1 in [nil, ""]))
+        |> Enum.map(&parse_id/1)
+        |> then(fn parsed ->
+          if Enum.all?(parsed, &match?({:ok, _id}, &1)) do
+            ids = parsed |> Enum.map(fn {:ok, id} -> id end) |> Enum.uniq()
+            if ids == [], do: {:error, :no_estimable_progress}, else: {:ok, ids}
+          else
+            {:error, :invalid_quality_control_ids}
+          end
+        end)
+
+      _other ->
+        {:error, :no_estimable_progress}
+    end
+  end
+
+  defp selected_estimable_rows(project, subcontract, selected_ids) do
+    rows =
+      subcontract
+      |> estimable_payable_progress_query(project)
+      |> where([c], c.id in ^selected_ids)
+      |> Repo.all()
+
+    if length(rows) == length(selected_ids) do
+      {:ok, rows}
+    else
+      {:error, :invalid_quality_control_ids}
+    end
+  end
+
+  defp parse_id(id) when is_integer(id), do: {:ok, id}
+
+  defp parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {parsed, ""} -> {:ok, parsed}
+      _other -> :error
+    end
+  end
+
+  defp parse_id(_id), do: :error
+
+  defp add_estimate_amounts(rows, unit_price) do
+    Enum.map(rows, fn control ->
+      amount = line_amount(control.accepted_quantity, unit_price)
+
+      %{
+        quality_control: control,
+        work_item: control.work_item,
+        executed_progress_entry: control.executed_progress_entry,
+        quantity: control.accepted_quantity,
+        unit_price: unit_price,
+        amount: amount
+      }
+    end)
+  end
+
+  defp unit_price_for(work_items, %Subcontract{} = subcontract) do
+    total_quantity =
+      Enum.reduce(work_items, Decimal.new("0"), fn work_item, total ->
+        Decimal.add(total, work_item.quantity)
+      end)
+
+    subcontract.current_contract_amount
+    |> Decimal.div(total_quantity)
+    |> Decimal.round(4)
+  end
+
+  defp line_amount(quantity, unit_price) do
+    quantity
+    |> Decimal.mult(unit_price)
+    |> Decimal.round(4)
+  end
+
+  defp estimate_line_attrs(project, subcontract, rows, unit_price) do
+    Enum.map(rows, fn control ->
+      quantity = control.accepted_quantity
+
+      %{
+        project_id: project.id,
+        subcontract_id: subcontract.id,
+        work_item_id: control.work_item_id,
+        quality_control_id: control.id,
+        executed_progress_entry_id: control.executed_progress_entry_id,
+        quantity: quantity,
+        unit_price: unit_price,
+        amount: line_amount(quantity, unit_price)
+      }
+    end)
+  end
+
+  defp total_amount(line_attrs) do
+    Enum.reduce(line_attrs, Decimal.new("0"), fn attrs, total ->
+      Decimal.add(total, attrs.amount)
+    end)
+  end
+
+  defp fetch_attr(attrs, key) do
+    Map.get(attrs, key) || Map.get(attrs, to_string(key))
   end
 
   defp validate_counterparty(changeset, %Counterparty{role: role})
@@ -208,6 +458,25 @@ defmodule Civora.Subcontracts do
       "retention_percentage" => Decimal.to_string(subcontract.retention_percentage),
       "amortization_percentage" => Decimal.to_string(subcontract.amortization_percentage),
       "work_item_ids" => Enum.map(work_items, & &1.id)
+    }
+  end
+
+  defp subcontract_estimate_state(estimate, line_attrs) do
+    %{
+      "subcontract_id" => estimate.subcontract_id,
+      "status" => to_string(estimate.status),
+      "amount" => Decimal.to_string(estimate.amount, :normal),
+      "lines" =>
+        Enum.map(line_attrs, fn attrs ->
+          %{
+            "work_item_id" => attrs.work_item_id,
+            "quality_control_id" => attrs.quality_control_id,
+            "executed_progress_entry_id" => attrs.executed_progress_entry_id,
+            "quantity" => Decimal.to_string(attrs.quantity, :normal),
+            "unit_price" => Decimal.to_string(attrs.unit_price, :normal),
+            "amount" => Decimal.to_string(attrs.amount, :normal)
+          }
+        end)
     }
   end
 

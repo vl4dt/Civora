@@ -123,7 +123,7 @@ defmodule CivoraWeb.SubcontractLiveTest do
         responsible_name: "Obras Rivera"
       })
 
-    {:ok, _show, html} = live(conn, ~p"/projects/#{project}/subcontracts/#{subcontract}")
+    {:ok, show, html} = live(conn, ~p"/projects/#{project}/subcontracts/#{subcontract}")
 
     assert html =~ "Avance ejecutado vs pagable"
     assert html =~ "Pagable: 5.0000"
@@ -131,6 +131,19 @@ defmodule CivoraWeb.SubcontractLiveTest do
     assert html =~ "3.0000"
     assert html =~ "Ejecutado: 8.0000 m2 / Pagable: 5.0000 m2"
     assert html =~ "Ejecutado: 2.0000 m2 / Pagable: 0.0000 m2"
+
+    assert has_element?(show, "#subcontract-estimate-form")
+
+    html =
+      show
+      |> form("#subcontract-estimate-form",
+        subcontract_estimate: %{quality_control_ids: [control.id]}
+      )
+      |> render_submit()
+
+    assert html =~ "Estimacion generada correctamente."
+    assert html =~ "Estado: Generada"
+    assert html =~ "No hay cantidades pagables pendientes de estimar."
   end
 
   test "users outside the project cannot list or open subcontracts", %{

@@ -2,6 +2,7 @@ defmodule Civora.SubcontractsTest do
   use Civora.DataCase
 
   import Civora.AccountsFixtures
+  import Civora.ExecutionFixtures
   import Civora.ProjectsFixtures
   import Civora.SubcontractsFixtures
 
@@ -10,7 +11,13 @@ defmodule Civora.SubcontractsTest do
   alias Civora.Projects
   alias Civora.Repo
   alias Civora.Subcontracts
-  alias Civora.Subcontracts.{Counterparty, Subcontract}
+
+  alias Civora.Subcontracts.{
+    Counterparty,
+    Subcontract,
+    SubcontractEstimate,
+    SubcontractEstimateLine
+  }
 
   setup do
     %{scope: user_fixture() |> Scope.for_user()}
@@ -242,6 +249,104 @@ defmodule Civora.SubcontractsTest do
                Subcontracts.get_subcontract(outsider_scope, project, subcontract.id)
 
       refute Projects.authorized?(viewer_scope, project, :manage_subcontracts)
+    end
+
+    test "creates a subcontract estimate from selected unestimated payable quantities", %{
+      scope: scope,
+      project: project,
+      work_items: [first_item, second_item] = work_items,
+      counterparty: counterparty
+    } do
+      first_item = %{first_item | quantity: Decimal.new("10.0000")}
+      second_item = %{second_item | quantity: Decimal.new("10.0000")}
+
+      subcontract =
+        subcontract_fixture(scope, project, work_items, counterparty, %{
+          current_contract_amount: "200.0000"
+        })
+
+      first_activity = work_activity_fixture(scope, project, first_item)
+      second_activity = work_activity_fixture(scope, project, second_item)
+
+      first_progress =
+        executed_progress_fixture(scope, project, first_activity, %{quantity: "8.0000"})
+
+      second_progress =
+        executed_progress_fixture(scope, project, second_activity, %{quantity: "4.0000"})
+
+      first_control =
+        quality_control_fixture(scope, project, first_progress, %{
+          accepted_quantity: "5.0000",
+          rejection_reason: "Remate incompleto"
+        })
+
+      second_control =
+        quality_control_fixture(scope, project, second_progress, %{accepted_quantity: "4.0000"})
+
+      assert {:ok, estimable} =
+               Subcontracts.list_estimable_payable_progress(scope, project, subcontract)
+
+      assert Enum.map(estimable, & &1.quality_control.id) == [first_control.id, second_control.id]
+
+      assert {:ok, %SubcontractEstimate{} = estimate} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [first_control.id]
+               })
+
+      assert estimate.status == :generated
+      assert Decimal.equal?(estimate.amount, Decimal.new("19.6080"))
+      assert [%SubcontractEstimateLine{} = line] = estimate.lines
+      assert line.quality_control_id == first_control.id
+      assert Decimal.equal?(line.quantity, Decimal.new("5.0000"))
+      assert Decimal.equal?(line.unit_price, Decimal.new("3.9216"))
+      assert Decimal.equal?(line.amount, Decimal.new("19.6080"))
+
+      assert {:ok, [remaining]} =
+               Subcontracts.list_estimable_payable_progress(scope, project, subcontract)
+
+      assert remaining.quality_control.id == second_control.id
+
+      assert {:error, :invalid_quality_control_ids} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [first_control.id]
+               })
+
+      event = Repo.get_by!(AuditEvent, action: :estimate_created, entity_id: estimate.id)
+      assert event.entity_type == "subcontract_estimate"
+      assert event.new_state["status"] == "generated"
+
+      assert event.new_state["lines"] |> hd() |> Map.fetch!("quality_control_id") ==
+               first_control.id
+    end
+
+    test "rejects estimate creation without payable selections or estimate permission", %{
+      scope: scope,
+      project: project,
+      work_items: [work_item | _] = work_items,
+      counterparty: counterparty
+    } do
+      subcontract = subcontract_fixture(scope, project, work_items, counterparty)
+      activity = work_activity_fixture(scope, project, work_item)
+      progress = executed_progress_fixture(scope, project, activity)
+      control = quality_control_fixture(scope, project, progress)
+
+      assert {:error, :no_estimable_progress} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: []
+               })
+
+      viewer = user_fixture()
+      assignment_fixture(scope, project, viewer, :consulta)
+
+      assert {:error, :unauthorized} =
+               Subcontracts.create_subcontract_estimate(
+                 Scope.for_user(viewer),
+                 project,
+                 subcontract,
+                 %{
+                   quality_control_ids: [control.id]
+                 }
+               )
     end
   end
 end
