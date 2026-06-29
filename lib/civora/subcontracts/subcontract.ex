@@ -24,6 +24,8 @@ defmodule Civora.Subcontracts.Subcontract do
       join_through: "subcontract_work_items",
       on_replace: :delete
 
+    has_many :estimates, Civora.Subcontracts.SubcontractEstimate
+
     timestamps(type: :utc_datetime)
   end
 

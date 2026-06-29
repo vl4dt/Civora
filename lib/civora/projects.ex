@@ -339,6 +339,16 @@ defmodule Civora.Projects do
     )
   end
 
+  def authorized?(%Scope{user: %User{id: user_id}}, project_id, :manage_estimates) do
+    Repo.exists?(
+      from(a in ProjectAssignment,
+        where:
+          a.project_id == ^project_id and a.user_id == ^user_id and
+            a.role in [:administrador, :director_proyecto, :finanzas]
+      )
+    )
+  end
+
   def authorized?(_scope, _project, _action), do: false
 
   defp lock_assignment!(assignment_id) do
