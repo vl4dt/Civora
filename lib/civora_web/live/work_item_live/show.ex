@@ -3,6 +3,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   alias Civora.Budget
   alias Civora.Budget.{BudgetedPerformanceSheet, WorkItem}
+  alias Civora.Evidence
+  alias Civora.Evidence.EvidenceAttachment
   alias Civora.Execution
   alias Civora.Execution.{ExecutedProgressEntry, WorkActivity}
   alias Civora.Projects
@@ -21,6 +23,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
            Quality.list_work_item_quality_controls(socket.assigns.current_scope, project, item),
          {:ok, non_conformities} <-
            Quality.list_work_item_non_conformities(socket.assigns.current_scope, project, item),
+         {:ok, evidence_attachments} <-
+           Evidence.list_work_item_attachments(socket.assigns.current_scope, project, item),
          {:ok, payable_progress} <-
            Quality.get_work_item_payable_progress(socket.assigns.current_scope, project, item),
          {:ok, budgeted_sheet} <-
@@ -38,6 +42,11 @@ defmodule CivoraWeb.WorkItemLive.Show do
        |> assign(:executed_progress_entries, executed_progress_entries)
        |> assign(:quality_controls_by_entry_id, quality_controls_by_entry_id(quality_controls))
        |> assign(:non_conformities, non_conformities)
+       |> assign(:evidence_attachments, evidence_attachments)
+       |> assign(
+         :evidence_attachments_by_parent,
+         evidence_attachments_by_parent(evidence_attachments)
+       )
        |> assign(:payable_progress, payable_progress)
        |> assign(
          :non_conformities_by_quality_control_id,
@@ -63,8 +72,14 @@ defmodule CivoraWeb.WorkItemLive.Show do
          Execution.change_executed_progress(%ExecutedProgressEntry{})
        )
        |> assign_non_conformity_form(Quality.change_non_conformity(%NonConformity{}))
+       |> assign_evidence_form()
        |> assign_source_form()
-       |> assign_budgeted_sheet_form(budgeted_sheet)}
+       |> assign_budgeted_sheet_form(budgeted_sheet)
+       |> allow_upload(:evidence_file,
+         accept: ~w(.jpg .jpeg .png .webp .pdf),
+         max_entries: 1,
+         max_file_size: 10_000_000
+       )}
     else
       {:error, _reason} -> raise Ecto.NoResultsError, queryable: WorkItem
     end
@@ -106,6 +121,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
           <div class="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p class="text-sm font-medium text-primary">Calidad</p>
+
               <h2 class="mt-1 text-xl font-semibold">Avance pagable</h2>
             </div>
 
@@ -117,24 +133,31 @@ defmodule CivoraWeb.WorkItemLive.Show do
           <dl class="mt-5 grid gap-4 sm:grid-cols-4">
             <div class="border-l-2 border-base-300 pl-4">
               <dt class="text-sm text-base-content/60">Ejecutado</dt>
+
               <dd class="mt-1 font-semibold">
                 {@payable_progress.executed_quantity} {@work_item.unit}
               </dd>
             </div>
+
             <div class="border-l-2 border-success pl-4">
               <dt class="text-sm text-base-content/60">Aceptado</dt>
+
               <dd class="mt-1 font-semibold">
                 {@payable_progress.accepted_quantity} {@work_item.unit}
               </dd>
             </div>
+
             <div class="border-l-2 border-warning pl-4">
               <dt class="text-sm text-base-content/60">Rechazado</dt>
+
               <dd class="mt-1 font-semibold">
                 {@payable_progress.rejected_quantity} {@work_item.unit}
               </dd>
             </div>
+
             <div class="border-l-2 border-error pl-4">
               <dt class="text-sm text-base-content/60">No conformidad abierta</dt>
+
               <dd class="mt-1 font-semibold">
                 {@payable_progress.open_non_conformity_quantity} {@work_item.unit}
               </dd>
@@ -207,6 +230,13 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     </span>
                   </div>
 
+                  <.evidence_panel
+                    attachments={
+                      evidence_for(@evidence_attachments_by_parent, :executed_progress, entry.id)
+                    }
+                    can_manage={@can_manage_quality}
+                  />
+
                   <div
                     :if={quality_control_for(@quality_controls_by_entry_id, entry)}
                     class="mt-4 border-t border-base-300 pt-4 text-sm"
@@ -237,6 +267,13 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     >
                       No conformidad registrada
                     </span>
+
+                    <.evidence_panel
+                      attachments={
+                        evidence_for(@evidence_attachments_by_parent, :quality_control, control.id)
+                      }
+                      can_manage={@can_manage_quality}
+                    />
 
                     <.form
                       :if={
@@ -395,6 +432,17 @@ defmodule CivoraWeb.WorkItemLive.Show do
                     </span>
                   </div>
 
+                  <.evidence_panel
+                    attachments={
+                      evidence_for(
+                        @evidence_attachments_by_parent,
+                        :non_conformity,
+                        non_conformity.id
+                      )
+                    }
+                    can_manage={@can_manage_quality}
+                  />
+
                   <.form
                     :if={@can_manage_quality && non_conformity.status == :open}
                     for={close_non_conformity_form(non_conformity)}
@@ -489,6 +537,58 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   />
                   <.button variant="primary" class="w-full" phx-disable-with="Registrando...">
                     Registrar avance
+                  </.button>
+                </.form>
+              </div>
+
+              <div :if={@can_manage_quality} class="mt-8 border-t border-base-300 pt-6">
+                <h3 class="text-base font-semibold">Adjuntar evidencia</h3>
+
+                <p
+                  :if={evidence_target_options(assigns) == []}
+                  class="mt-4 text-sm leading-6 text-warning"
+                >
+                  Registra avance, control de calidad o no conformidad para adjuntar evidencia.
+                </p>
+
+                <.form
+                  :if={evidence_target_options(assigns) != []}
+                  for={@evidence_form}
+                  id="evidence-form"
+                  phx-change="validate_evidence"
+                  phx-submit="save_evidence"
+                  class="mt-5 space-y-4"
+                >
+                  <.input
+                    field={@evidence_form[:target]}
+                    type="select"
+                    label="Registro"
+                    prompt="Seleccionar"
+                    options={evidence_target_options(assigns)}
+                    required
+                  />
+
+                  <.live_file_input
+                    upload={@uploads.evidence_file}
+                    class="file-input file-input-bordered w-full"
+                  />
+
+                  <p
+                    :for={entry <- @uploads.evidence_file.entries}
+                    class="text-sm text-base-content/65"
+                  >
+                    {entry.client_name}
+                  </p>
+
+                  <p
+                    :for={error <- upload_errors(@uploads.evidence_file)}
+                    class="text-sm text-error"
+                  >
+                    {upload_error_label(error)}
+                  </p>
+
+                  <.button variant="primary" class="w-full" phx-disable-with="Adjuntando...">
+                    Adjuntar evidencia
                   </.button>
                 </.form>
               </div>
@@ -709,6 +809,66 @@ defmodule CivoraWeb.WorkItemLive.Show do
     """
   end
 
+  attr :attachments, :list, required: true
+  attr :can_manage, :boolean, default: false
+
+  defp evidence_panel(assigns) do
+    ~H"""
+    <div class="mt-4 border-t border-base-300 pt-4">
+      <p class="text-sm font-semibold">Evidencia</p>
+
+      <div :if={@attachments == []} class="mt-2 text-sm text-base-content/60">
+        Sin evidencia adjunta.
+      </div>
+
+      <div
+        :for={attachment <- @attachments}
+        id={"evidence-attachment-#{attachment.id}"}
+        class="mt-3 rounded-box border border-base-300 p-3 text-sm"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="font-medium">{attachment.original_filename}</p>
+            <p class="mt-1 text-base-content/60">
+              {attachment.content_type} - {format_bytes(attachment.byte_size)} - {attachment.uploaded_by.email} - {format_datetime(
+                attachment.inserted_at
+              )}
+            </p>
+            <p :if={attachment.status == :invalidated} class="mt-1 text-warning">
+              Invalidada: {attachment.invalidation_reason}
+            </p>
+          </div>
+
+          <span :if={attachment.status == :valid} class="badge badge-success badge-outline">
+            Vigente
+          </span>
+          <span :if={attachment.status == :invalidated} class="badge badge-warning badge-outline">
+            Invalidada
+          </span>
+        </div>
+
+        <.form
+          :if={@can_manage && attachment.status == :valid}
+          for={invalidate_evidence_form(attachment)}
+          id={"invalidate-evidence-form-#{attachment.id}"}
+          phx-submit="invalidate_evidence"
+          class="mt-3 grid gap-3 border-t border-base-300 pt-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+        >
+          <input type="hidden" name="evidence_invalidation[id]" value={attachment.id} />
+          <.input
+            field={invalidate_evidence_form(attachment)[:invalidation_reason]}
+            label="Motivo de invalidacion"
+            required
+          />
+          <.button variant="primary" phx-disable-with="Invalidando...">
+            Invalidar
+          </.button>
+        </.form>
+      </div>
+    </div>
+    """
+  end
+
   @impl true
   def handle_event("validate_activity", %{"work_activity" => params}, socket) do
     changeset =
@@ -916,6 +1076,79 @@ defmodule CivoraWeb.WorkItemLive.Show do
     end
   end
 
+  def handle_event("validate_evidence", %{"evidence" => params}, socket) do
+    {:noreply, assign_evidence_form(socket, params)}
+  end
+
+  def handle_event("save_evidence", %{"evidence" => %{"target" => target}}, socket) do
+    with {:ok, parent_attrs} <- evidence_parent_attrs(target),
+         [file_attrs] <- consume_evidence_upload(socket) do
+      attrs = Map.merge(parent_attrs, file_attrs)
+
+      case Evidence.create_attachment(
+             socket.assigns.current_scope,
+             socket.assigns.project,
+             socket.assigns.work_item,
+             attrs
+           ) do
+        {:ok, attachment} ->
+          {:noreply,
+           socket
+           |> put_evidence_attachment(attachment)
+           |> assign_evidence_form()
+           |> put_flash(:info, "Evidencia adjuntada correctamente.")}
+
+        {:error, {:not_configured, _variables}} ->
+          {:noreply,
+           put_flash(socket, :error, "El almacenamiento de evidencias no esta configurado.")}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "No tienes permiso para adjuntar evidencia.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "No se pudo adjuntar la evidencia.")}
+      end
+    else
+      {:error, :invalid_target} ->
+        {:noreply, put_flash(socket, :error, "Selecciona un registro valido.")}
+
+      [] ->
+        {:noreply, put_flash(socket, :error, "Selecciona un archivo para adjuntar.")}
+    end
+  end
+
+  def handle_event("invalidate_evidence", %{"evidence_invalidation" => params}, socket) do
+    with %EvidenceAttachment{} = attachment <-
+           selected_evidence_attachment(socket.assigns.evidence_attachments, params) do
+      case Evidence.invalidate_attachment(
+             socket.assigns.current_scope,
+             socket.assigns.project,
+             attachment,
+             params
+           ) do
+        {:ok, invalidated_attachment} ->
+          {:noreply,
+           socket
+           |> replace_evidence_attachment(invalidated_attachment)
+           |> put_flash(:info, "Evidencia invalidada correctamente.")}
+
+        {:error, %Ecto.Changeset{}} ->
+          {:noreply, put_flash(socket, :error, "Agrega un motivo valido para invalidar.")}
+
+        {:error, :already_invalidated} ->
+          {:noreply, put_flash(socket, :error, "La evidencia ya fue invalidada.")}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, "No tienes permiso para invalidar evidencia.")}
+
+        {:error, _reason} ->
+          {:noreply, put_flash(socket, :error, "No se pudo invalidar la evidencia.")}
+      end
+    else
+      nil -> {:noreply, put_flash(socket, :error, "Selecciona una evidencia valida.")}
+    end
+  end
+
   def handle_event(
         "create_budgeted_sheet",
         %{"budgeted_sheet_source" => %{"source_id" => source_id}},
@@ -1002,6 +1235,25 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp selected_executed_progress(_entries, _params), do: nil
 
+  defp evidence_parent_attrs("executed_progress:" <> id),
+    do: {:ok, %{"executed_progress_entry_id" => id}}
+
+  defp evidence_parent_attrs("quality_control:" <> id), do: {:ok, %{"quality_control_id" => id}}
+  defp evidence_parent_attrs("non_conformity:" <> id), do: {:ok, %{"non_conformity_id" => id}}
+  defp evidence_parent_attrs(_target), do: {:error, :invalid_target}
+
+  defp consume_evidence_upload(socket) do
+    consume_uploaded_entries(socket, :evidence_file, fn %{path: path}, entry ->
+      {:ok,
+       %{
+         "body" => File.read!(path),
+         "original_filename" => entry.client_name,
+         "content_type" => entry.client_type || "application/octet-stream",
+         "byte_size" => entry.client_size
+       }}
+    end)
+  end
+
   defp quality_controls_by_entry_id(controls) do
     Map.new(controls, &{&1.executed_progress_entry_id, &1})
   end
@@ -1078,11 +1330,90 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp selected_non_conformity(_non_conformities, _params), do: nil
 
+  defp selected_evidence_attachment(attachments, %{"id" => id}) do
+    Enum.find(attachments, &(to_string(&1.id) == to_string(id)))
+  end
+
+  defp selected_evidence_attachment(_attachments, _params), do: nil
+
   defp replace_non_conformity(non_conformities, closed_non_conformity) do
     Enum.map(non_conformities, fn
       %NonConformity{id: id} when id == closed_non_conformity.id -> closed_non_conformity
       non_conformity -> non_conformity
     end)
+  end
+
+  defp evidence_attachments_by_parent(attachments) do
+    Enum.group_by(attachments, &evidence_parent_key/1)
+  end
+
+  defp evidence_for(attachments_by_parent, parent_type, parent_id) do
+    Map.get(attachments_by_parent, {parent_type, parent_id}, [])
+  end
+
+  defp evidence_parent_key(%EvidenceAttachment{executed_progress_entry_id: id})
+       when not is_nil(id),
+       do: {:executed_progress, id}
+
+  defp evidence_parent_key(%EvidenceAttachment{quality_control_id: id}) when not is_nil(id),
+    do: {:quality_control, id}
+
+  defp evidence_parent_key(%EvidenceAttachment{non_conformity_id: id}) when not is_nil(id),
+    do: {:non_conformity, id}
+
+  defp put_evidence_attachment(socket, attachment) do
+    attachments = [attachment | socket.assigns.evidence_attachments]
+
+    socket
+    |> assign(:evidence_attachments, attachments)
+    |> assign(:evidence_attachments_by_parent, evidence_attachments_by_parent(attachments))
+  end
+
+  defp replace_evidence_attachment(socket, updated_attachment) do
+    attachments =
+      Enum.map(socket.assigns.evidence_attachments, fn
+        %EvidenceAttachment{id: id} when id == updated_attachment.id -> updated_attachment
+        attachment -> attachment
+      end)
+
+    socket
+    |> assign(:evidence_attachments, attachments)
+    |> assign(:evidence_attachments_by_parent, evidence_attachments_by_parent(attachments))
+  end
+
+  defp evidence_target_options(assigns) do
+    progress_options =
+      Enum.map(assigns.executed_progress_entries, fn entry ->
+        {"Avance #{entry.id} - #{entry.quantity} #{assigns.work_item.unit} en #{entry.location_sector}",
+         "executed_progress:#{entry.id}"}
+      end)
+
+    quality_options =
+      assigns.quality_controls_by_entry_id
+      |> Map.values()
+      |> Enum.map(fn control ->
+        {"Control de calidad #{control.id} - #{quality_status_label(control.status)}",
+         "quality_control:#{control.id}"}
+      end)
+
+    non_conformity_options =
+      Enum.map(assigns.non_conformities, fn non_conformity ->
+        {"No conformidad #{non_conformity.id} - #{non_conformity.defect}",
+         "non_conformity:#{non_conformity.id}"}
+      end)
+
+    progress_options ++ quality_options ++ non_conformity_options
+  end
+
+  defp invalidate_evidence_form(attachment) do
+    to_form(
+      %{
+        "id" => attachment.id,
+        "invalidation_reason" => ""
+      },
+      as: :evidence_invalidation,
+      id: "evidence_invalidation_#{attachment.id}"
+    )
   end
 
   defp mark_entry_payable(entries, control) do
@@ -1113,6 +1444,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
     assign(socket, :non_conformity_form, to_form(changeset))
   end
 
+  defp assign_evidence_form(socket, attrs \\ %{"target" => ""}) do
+    assign(socket, :evidence_form, to_form(attrs, as: :evidence))
+  end
+
   defp assign_payable_progress(socket) do
     case Quality.get_work_item_payable_progress(
            socket.assigns.current_scope,
@@ -1134,5 +1469,26 @@ defmodule CivoraWeb.WorkItemLive.Show do
 
   defp assign_budgeted_sheet_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :budgeted_sheet_form, to_form(changeset))
+  end
+
+  defp upload_error_label(:too_large), do: "El archivo supera el limite de 10 MB."
+  defp upload_error_label(:too_many_files), do: "Adjunta un archivo a la vez."
+  defp upload_error_label(:not_accepted), do: "Formato no permitido."
+  defp upload_error_label(_error), do: "No se pudo adjuntar el archivo."
+
+  defp format_bytes(bytes) when is_integer(bytes) and bytes >= 1_000_000 do
+    "#{Float.round(bytes / 1_000_000, 1)} MB"
+  end
+
+  defp format_bytes(bytes) when is_integer(bytes) and bytes >= 1_000 do
+    "#{Float.round(bytes / 1_000, 1)} KB"
+  end
+
+  defp format_bytes(bytes), do: "#{bytes} B"
+
+  defp format_datetime(nil), do: ""
+
+  defp format_datetime(%DateTime{} = datetime) do
+    Calendar.strftime(datetime, "%Y-%m-%d %H:%M")
   end
 end

@@ -20,7 +20,9 @@ defmodule Civora.Audit.AuditEvent do
     :quality_rejected,
     :non_conformity_created,
     :non_conformity_closed,
-    :estimate_created
+    :estimate_created,
+    :evidence_uploaded,
+    :evidence_invalidated
   ]
 
   schema "audit_events" do

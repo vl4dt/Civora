@@ -29,6 +29,8 @@ config :civora, CivoraWeb.Endpoint,
 # In test we don't send emails
 config :civora, Civora.Mailer, adapter: Swoosh.Adapters.Test
 
+config :civora, :storage_adapter, Civora.Storage.Test
+
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
 

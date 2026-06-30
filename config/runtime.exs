@@ -29,6 +29,9 @@ config :civora, Civora.Storage.R2,
   access_key_id: System.get_env("R2_ACCESS_KEY_ID"),
   secret_access_key: System.get_env("R2_SECRET_ACCESS_KEY")
 
+config :civora, Civora.Storage.Local,
+  root: System.get_env("LOCAL_STORAGE_ROOT", "priv/storage")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

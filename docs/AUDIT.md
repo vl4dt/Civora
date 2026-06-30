@@ -23,6 +23,7 @@ proyecto o usuario con historial no puede eliminarse destruyendo su auditoria.
 - Registro de avance ejecutado.
 - Aceptacion o rechazo de calidad.
 - Creacion y cierre de no conformidades.
+- Carga e invalidacion de evidencia.
 - Asignacion de usuario al proyecto.
 - Cambio de rol por proyecto.
 - Retiro de una asignacion.
@@ -37,7 +38,7 @@ insertar esos eventos mediante `Civora.Audit.event_changeset/3` dentro de la
 misma transaccion que aprueba o genera el registro de negocio. Calidad usa
 `quality_accepted` y `quality_rejected` para controles registrados en RS-28.
 No conformidades usa `non_conformity_created` y `non_conformity_closed` desde
-RS-29.
+RS-29. Evidencias usa `evidence_uploaded` y `evidence_invalidated` desde RS-34.
 
 ## Consulta
 

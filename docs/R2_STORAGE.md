@@ -14,8 +14,10 @@ compatible con S3 mediante `Civora.Storage`.
 | `R2_SECRET_ACCESS_KEY` | secreto | Secret Access Key del token R2. |
 
 La region S3 se configura como `auto`, segun el requisito de Cloudflare R2.
-La aplicacion devuelve `{:error, {:not_configured, variables}}` mientras falte
-alguna variable, sin intentar conectarse a AWS u otro proveedor.
+El adaptador R2 devuelve `{:error, {:not_configured, variables}}` mientras falte
+alguna variable, sin intentar conectarse a AWS u otro proveedor. La frontera
+`Civora.Storage` usa R2 cuando esta configurado y cae a almacenamiento local
+cuando R2 sigue diferido.
 
 ## Crear recursos
 
@@ -43,6 +45,12 @@ mensajes de revision.
 {:ok, jpeg} = Civora.Storage.get_object("evidence/project-123/photo.jpg")
 ```
 
-La carga funcional desde navegador, metadatos de evidencia y URLs temporales
-pertenecen al milestone de evidencia. RS-15 solo establece y verifica el limite
-de almacenamiento.
+La carga funcional desde navegador y los metadatos de evidencia se implementan
+desde RS-34. Las URLs temporales de descarga siguen fuera del alcance basico.
+
+## Respaldo local temporal
+
+Mientras R2 no tenga credenciales, `Civora.Storage.Local` guarda los binarios en
+`LOCAL_STORAGE_ROOT`, o `priv/storage` si la variable no existe. Esto permite
+validar RS-34 en local y staging, pero en Render el filesystem es efimero y no
+debe considerarse retencion documental.
