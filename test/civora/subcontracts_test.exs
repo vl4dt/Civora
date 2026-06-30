@@ -427,5 +427,52 @@ defmodule Civora.SubcontractsTest do
       assert Decimal.equal?(balance.estimate_amount, Decimal.new("58.8240"))
       assert Repo.aggregate(SubcontractEstimate, :count) == 1
     end
+
+    test "summarizes project cost from approved budget, subcontracts, payable progress, and estimates",
+         %{
+           scope: scope,
+           project: project,
+           work_items: [first_item, second_item] = work_items,
+           counterparty: counterparty
+         } do
+      _approved_budget = approved_project_budget_fixture(scope, project)
+
+      subcontract =
+        subcontract_fixture(scope, project, work_items, counterparty, %{
+          current_contract_amount: "200.0000"
+        })
+
+      first_activity = work_activity_fixture(scope, project, first_item)
+      second_activity = work_activity_fixture(scope, project, second_item)
+
+      first_progress =
+        executed_progress_fixture(scope, project, first_activity, %{quantity: "5.0000"})
+
+      second_progress =
+        executed_progress_fixture(scope, project, second_activity, %{quantity: "4.0000"})
+
+      first_control =
+        quality_control_fixture(scope, project, first_progress, %{accepted_quantity: "5.0000"})
+
+      _second_control =
+        quality_control_fixture(scope, project, second_progress, %{accepted_quantity: "4.0000"})
+
+      assert {:ok, _estimate} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [first_control.id]
+               })
+
+      assert {:ok, summary} = Subcontracts.get_project_cost_summary(scope, project)
+
+      assert summary.approved_budget.line_count == 2
+      assert Decimal.equal?(summary.totals.contracted_amount, Decimal.new("200.0000"))
+      assert Decimal.equal?(summary.totals.payable_amount, Decimal.new("35.2944"))
+      assert Decimal.equal?(summary.totals.estimated_amount, Decimal.new("19.6080"))
+      assert Decimal.equal?(summary.totals.balance, Decimal.new("180.3920"))
+
+      assert [subcontract_summary] = summary.subcontracts
+      assert subcontract_summary.subcontract.id == subcontract.id
+      assert Decimal.equal?(subcontract_summary.payable_amount, Decimal.new("35.2944"))
+    end
   end
 end

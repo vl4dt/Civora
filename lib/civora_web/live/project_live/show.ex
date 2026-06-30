@@ -54,6 +54,9 @@ defmodule CivoraWeb.ProjectLive.Show do
             >
               <.icon name="hero-document-text" class="size-4" /> Subcontratos
             </.link>
+            <.link navigate={~p"/projects/#{@project}/costs"} class="btn btn-ghost btn-sm">
+              <.icon name="hero-chart-bar" class="size-4" /> Costo
+            </.link>
             <.link navigate={~p"/projects/#{@project}/budget"} class="btn btn-ghost btn-sm">
               <.icon name="hero-banknotes" class="size-4" /> Presupuesto
             </.link>
