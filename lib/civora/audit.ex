@@ -26,7 +26,9 @@ defmodule Civora.Audit do
     quality_rejected: "Calidad rechazada",
     non_conformity_created: "No conformidad creada",
     non_conformity_closed: "No conformidad cerrada",
-    estimate_created: "Estimacion creada"
+    estimate_created: "Estimacion creada",
+    evidence_uploaded: "Evidencia adjuntada",
+    evidence_invalidated: "Evidencia invalidada"
   }
 
   def actions, do: AuditEvent.actions()

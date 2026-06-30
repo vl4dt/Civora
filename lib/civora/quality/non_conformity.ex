@@ -24,6 +24,7 @@ defmodule Civora.Quality.NonConformity do
     belongs_to :work_item, WorkItem
     belongs_to :quality_control, QualityControl
     belongs_to :executed_progress_entry, ExecutedProgressEntry
+    has_many :evidence_attachments, Civora.Evidence.EvidenceAttachment
 
     timestamps(type: :utc_datetime)
   end

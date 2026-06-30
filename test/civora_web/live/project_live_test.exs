@@ -518,6 +518,71 @@ defmodule CivoraWeb.ProjectLiveTest do
       refute has_element?(view, "#executed-progress-form")
       refute has_element?(view, "#quality-control-form-#{progress.id}")
     end
+
+    test "attaches and invalidates evidence from the work item detail", %{
+      conn: conn,
+      scope: scope
+    } do
+      start_supervised!(Civora.Storage.Test)
+      Civora.Storage.Test.reset!()
+
+      project = project_fixture(scope)
+      phase = project_phase_fixture(scope, project)
+      work_item = work_item_fixture(scope, project, phase)
+      activity = work_activity_fixture(scope, project, work_item)
+
+      progress =
+        executed_progress_fixture(scope, project, activity, %{
+          quantity: "4.0000",
+          location_sector: "Sector con evidencia"
+        })
+
+      {:ok, view, html} = live(conn, ~p"/projects/#{project}/work-items/#{work_item}")
+
+      assert html =~ "Sin evidencia adjunta"
+      assert has_element?(view, "#evidence-form")
+
+      upload =
+        file_input(view, "#evidence-form", :evidence_file, [
+          %{
+            name: "avance.jpg",
+            content: "jpeg bytes",
+            type: "image/jpeg"
+          }
+        ])
+
+      assert render_upload(upload, "avance.jpg") =~ "avance.jpg"
+
+      html =
+        view
+        |> form("#evidence-form",
+          evidence: %{target: "executed_progress:#{progress.id}"}
+        )
+        |> render_submit()
+
+      assert html =~ "Evidencia adjuntada correctamente."
+      assert html =~ "avance.jpg"
+      assert html =~ "Vigente"
+
+      [attachment] = Civora.Repo.all(Civora.Evidence.EvidenceAttachment)
+
+      html =
+        view
+        |> form("#invalidate-evidence-form-#{attachment.id}",
+          evidence_invalidation: %{
+            id: attachment.id,
+            invalidation_reason: "Archivo reemplazado por evidencia mas clara"
+          }
+        )
+        |> render_submit()
+
+      assert html =~ "Evidencia invalidada correctamente."
+      assert html =~ "Invalidada"
+      assert html =~ "Archivo reemplazado por evidencia mas clara"
+
+      assert Civora.Repo.get!(Civora.Evidence.EvidenceAttachment, attachment.id).status ==
+               :invalidated
+    end
   end
 
   describe "project budget" do

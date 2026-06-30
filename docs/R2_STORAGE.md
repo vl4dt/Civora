@@ -43,6 +43,5 @@ mensajes de revision.
 {:ok, jpeg} = Civora.Storage.get_object("evidence/project-123/photo.jpg")
 ```
 
-La carga funcional desde navegador, metadatos de evidencia y URLs temporales
-pertenecen al milestone de evidencia. RS-15 solo establece y verifica el limite
-de almacenamiento.
+La carga funcional desde navegador y los metadatos de evidencia se implementan
+desde RS-34. Las URLs temporales de descarga siguen fuera del alcance basico.

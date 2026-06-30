@@ -15,6 +15,7 @@ defmodule Civora.Execution.ExecutedProgressEntry do
     belongs_to :work_item, WorkItem
     belongs_to :work_activity, WorkActivity
     has_one :quality_control, Civora.Quality.QualityControl
+    has_many :evidence_attachments, Civora.Evidence.EvidenceAttachment
 
     timestamps(type: :utc_datetime)
   end

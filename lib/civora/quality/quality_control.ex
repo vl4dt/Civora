@@ -20,6 +20,7 @@ defmodule Civora.Quality.QualityControl do
     belongs_to :executed_progress_entry, ExecutedProgressEntry
     has_one :non_conformity, Civora.Quality.NonConformity
     has_one :subcontract_estimate_line, Civora.Subcontracts.SubcontractEstimateLine
+    has_many :evidence_attachments, Civora.Evidence.EvidenceAttachment
 
     timestamps(type: :utc_datetime)
   end
