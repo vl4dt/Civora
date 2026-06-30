@@ -10,6 +10,7 @@ un servicio web Phoenix y una base PostgreSQL 16 administrada en la misma region
 | `DATABASE_URL` | Referencia a `civora-staging-db` | Conexion Ecto a PostgreSQL. |
 | `SECRET_KEY_BASE` | Definida en Render | Firma y cifra datos de Phoenix; debe tener al menos 64 bytes. |
 | `ELIXIR_VERSION` | `1.20.1` | Fija la version del runtime. |
+| `ERLANG_VERSION` | `29.0.2` | Fija la version de OTP usada por el runtime. |
 | `POOL_SIZE` | `5` | Limita conexiones del servicio de staging. |
 | `RENDER_EXTERNAL_HOSTNAME` | Proporcionada por Render | Configura el host publico de Phoenix. |
 | `PORT` | Proporcionada por Render | Puerto HTTP donde escucha Phoenix. |

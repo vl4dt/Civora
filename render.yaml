@@ -17,6 +17,8 @@ services:
         sync: false
       - key: ELIXIR_VERSION
         value: 1.20.1
+      - key: ERLANG_VERSION
+        value: 29.0.2
       - key: POOL_SIZE
         value: 5
       - key: R2_ENDPOINT
