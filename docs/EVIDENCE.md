@@ -26,7 +26,9 @@ transaccion que cambia el estado de la evidencia.
 
 ## Almacenamiento
 
-En produccion, `Civora.Storage` usa Cloudflare R2. Mientras las credenciales no
-esten configuradas, la carga desde navegador devuelve un mensaje claro y no crea
-metadatos huerfanos. En pruebas se usa un adaptador en memoria para cubrir el
-flujo sin depender de R2.
+En produccion, `Civora.Storage` intenta usar Cloudflare R2. Mientras las
+credenciales no esten configuradas, la aplicacion usa almacenamiento local como
+respaldo para validar el flujo basico sin crear metadatos huerfanos. En Render
+ese respaldo no es durable entre redeploys o reinicios; debe reemplazarse por R2
+cuando la cuenta tenga metodo de pago disponible. En pruebas se usa un adaptador
+en memoria para cubrir el flujo sin depender de R2.

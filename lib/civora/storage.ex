@@ -15,6 +15,6 @@ defmodule Civora.Storage do
   end
 
   defp adapter do
-    Application.get_env(:civora, :storage_adapter, Civora.Storage.R2)
+    Application.get_env(:civora, :storage_adapter, Civora.Storage.Fallback)
   end
 end
