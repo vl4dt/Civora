@@ -23,6 +23,12 @@ defmodule CivoraWeb.SubcontractLive.Show do
              project,
              subcontract
            ),
+         {:ok, estimate_balance} <-
+           Subcontracts.get_subcontract_estimate_balance(
+             socket.assigns.current_scope,
+             project,
+             subcontract
+           ),
          {:ok, estimable_progress} <-
            Subcontracts.list_estimable_payable_progress(
              socket.assigns.current_scope,
@@ -39,6 +45,7 @@ defmodule CivoraWeb.SubcontractLive.Show do
        |> assign(:payable_progress_by_work_item_id, payable_progress_by_work_item_id)
        |> assign(:payable_progress_totals, payable_progress_totals)
        |> assign(:estimates, estimates)
+       |> assign(:estimate_balance, estimate_balance)
        |> assign(:estimable_progress, estimable_progress)
        |> assign(:estimable_total, estimable_total(estimable_progress))
        |> assign(
@@ -150,9 +157,14 @@ defmodule CivoraWeb.SubcontractLive.Show do
               <h2 class="mt-1 text-xl font-semibold">Estimaciones</h2>
             </div>
 
-            <span class="badge badge-outline">
-              Pendiente de estimar: {@estimable_total}
-            </span>
+            <div class="flex flex-wrap gap-2">
+              <span class="badge badge-outline">
+                Saldo disponible: {@estimate_balance.available_balance}
+              </span>
+              <span class="badge badge-outline">
+                Pendiente de estimar: {@estimable_total}
+              </span>
+            </div>
           </div>
 
           <.form
@@ -183,13 +195,12 @@ defmodule CivoraWeb.SubcontractLive.Show do
                 <span class="text-sm font-semibold">{row.amount}</span>
               </label>
             </div>
-
             <input type="hidden" name="subcontract_estimate[quality_control_ids][]" value="" />
-
             <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p class="text-sm text-base-content/60">
                 Solo se muestran cantidades pagables que no pertenecen a una estimacion previa.
               </p>
+
               <.button class="btn btn-primary" phx-disable-with="Generando...">
                 <.icon name="hero-document-plus" class="size-4" /> Generar estimacion
               </.button>
@@ -208,6 +219,7 @@ defmodule CivoraWeb.SubcontractLive.Show do
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 class="font-semibold">Estimacion #{estimate.id}</h3>
+
                   <p class="mt-1 text-sm text-base-content/60">
                     Estado: {estimate_status_label(estimate.status)} · {length(estimate.lines)} lineas
                   </p>
@@ -279,6 +291,14 @@ defmodule CivoraWeb.SubcontractLive.Show do
         {:noreply,
          put_flash(socket, :error, "La seleccion incluye cantidades ya estimadas o no pagables.")}
 
+      {:error, {:estimate_exceeds_contract_balance, balance}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "La estimacion supera el saldo disponible del subcontrato. Disponible: #{balance.available_balance}; seleccion: #{balance.estimate_amount}."
+         )}
+
       {:error, :unauthorized} ->
         {:noreply, put_flash(socket, :error, "No tienes permiso para generar estimaciones.")}
     end
@@ -323,8 +343,16 @@ defmodule CivoraWeb.SubcontractLive.Show do
         socket.assigns.subcontract
       )
 
+    {:ok, estimate_balance} =
+      Subcontracts.get_subcontract_estimate_balance(
+        socket.assigns.current_scope,
+        socket.assigns.project,
+        socket.assigns.subcontract
+      )
+
     socket
     |> assign(:estimates, estimates)
+    |> assign(:estimate_balance, estimate_balance)
     |> assign(:estimable_progress, estimable_progress)
     |> assign(:estimable_total, estimable_total(estimable_progress))
     |> assign_estimate_form()

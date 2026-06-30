@@ -348,5 +348,84 @@ defmodule Civora.SubcontractsTest do
                  }
                )
     end
+
+    test "rejects estimates that exceed the current contract amount", %{
+      scope: scope,
+      project: project,
+      work_items: [work_item | _] = work_items,
+      counterparty: counterparty
+    } do
+      subcontract =
+        subcontract_fixture(scope, project, work_items, counterparty, %{
+          current_contract_amount: "100.0000"
+        })
+
+      activity = work_activity_fixture(scope, project, work_item)
+      progress = executed_progress_fixture(scope, project, activity, %{quantity: "60.0000"})
+      control = quality_control_fixture(scope, project, progress, %{accepted_quantity: "60.0000"})
+
+      assert {:error, {:estimate_exceeds_contract_balance, balance}} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [control.id]
+               })
+
+      assert Decimal.equal?(balance.current_contract_amount, Decimal.new("100.0000"))
+      assert Decimal.equal?(balance.estimated_amount, Decimal.new("0.0000"))
+      assert Decimal.equal?(balance.available_balance, Decimal.new("100.0000"))
+      assert Decimal.gt?(balance.estimate_amount, balance.available_balance)
+      assert Repo.aggregate(SubcontractEstimate, :count) == 0
+
+      assert Repo.aggregate(
+               from(e in AuditEvent, where: e.action == :estimate_created),
+               :count
+             ) == 0
+    end
+
+    test "rejects an estimate that would exceed remaining contract balance", %{
+      scope: scope,
+      project: project,
+      work_items: [work_item | _] = work_items,
+      counterparty: counterparty
+    } do
+      subcontract =
+        subcontract_fixture(scope, project, work_items, counterparty, %{
+          current_contract_amount: "100.0000"
+        })
+
+      first_activity =
+        work_activity_fixture(scope, project, work_item, %{location_sector: "Nivel 1"})
+
+      second_activity =
+        work_activity_fixture(scope, project, work_item, %{location_sector: "Nivel 2"})
+
+      first_progress =
+        executed_progress_fixture(scope, project, first_activity, %{quantity: "30.0000"})
+
+      second_progress =
+        executed_progress_fixture(scope, project, second_activity, %{quantity: "30.0000"})
+
+      first_control =
+        quality_control_fixture(scope, project, first_progress, %{accepted_quantity: "30.0000"})
+
+      second_control =
+        quality_control_fixture(scope, project, second_progress, %{accepted_quantity: "30.0000"})
+
+      assert {:ok, first_estimate} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [first_control.id]
+               })
+
+      assert Decimal.equal?(first_estimate.amount, Decimal.new("58.8240"))
+
+      assert {:error, {:estimate_exceeds_contract_balance, balance}} =
+               Subcontracts.create_subcontract_estimate(scope, project, subcontract, %{
+                 quality_control_ids: [second_control.id]
+               })
+
+      assert Decimal.equal?(balance.estimated_amount, Decimal.new("58.8240"))
+      assert Decimal.equal?(balance.available_balance, Decimal.new("41.1760"))
+      assert Decimal.equal?(balance.estimate_amount, Decimal.new("58.8240"))
+      assert Repo.aggregate(SubcontractEstimate, :count) == 1
+    end
   end
 end
