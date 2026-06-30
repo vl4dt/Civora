@@ -555,6 +555,7 @@ defmodule CivoraWeb.WorkItemLive.Show do
                   :if={evidence_target_options(assigns) != []}
                   for={@evidence_form}
                   id="evidence-form"
+                  phx-change="validate_evidence"
                   phx-submit="save_evidence"
                   class="mt-5 space-y-4"
                 >
@@ -1075,6 +1076,10 @@ defmodule CivoraWeb.WorkItemLive.Show do
     end
   end
 
+  def handle_event("validate_evidence", %{"evidence" => params}, socket) do
+    {:noreply, assign_evidence_form(socket, params)}
+  end
+
   def handle_event("save_evidence", %{"evidence" => %{"target" => target}}, socket) do
     with {:ok, parent_attrs} <- evidence_parent_attrs(target),
          [file_attrs] <- consume_evidence_upload(socket) do
@@ -1439,8 +1444,8 @@ defmodule CivoraWeb.WorkItemLive.Show do
     assign(socket, :non_conformity_form, to_form(changeset))
   end
 
-  defp assign_evidence_form(socket) do
-    assign(socket, :evidence_form, to_form(%{"target" => ""}, as: :evidence))
+  defp assign_evidence_form(socket, attrs \\ %{"target" => ""}) do
+    assign(socket, :evidence_form, to_form(attrs, as: :evidence))
   end
 
   defp assign_payable_progress(socket) do

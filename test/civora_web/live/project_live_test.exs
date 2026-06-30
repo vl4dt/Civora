@@ -541,6 +541,7 @@ defmodule CivoraWeb.ProjectLiveTest do
 
       assert html =~ "Sin evidencia adjunta"
       assert has_element?(view, "#evidence-form")
+      assert has_element?(view, ~s|#evidence-form[phx-change="validate_evidence"]|)
 
       upload =
         file_input(view, "#evidence-form", :evidence_file, [
