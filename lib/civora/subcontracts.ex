@@ -7,6 +7,7 @@ defmodule Civora.Subcontracts do
 
   alias Civora.Accounts.{Scope, User}
   alias Civora.Audit
+  alias Civora.Budget.ProjectBudget
   alias Civora.Budget.WorkItem
   alias Civora.Projects
   alias Civora.Projects.Project
@@ -144,6 +145,57 @@ defmodule Civora.Subcontracts do
     else
       false -> {:error, :unauthorized}
       nil -> {:error, :not_found}
+    end
+  end
+
+  def get_project_cost_summary(%Scope{} = scope, %Project{} = project) do
+    with true <- Projects.authorized?(scope, project, :view) do
+      approved_budget = approved_budget_summary(project)
+      subcontracts = project_subcontracts_with_work_items(project)
+      estimates_by_subcontract = estimates_by_subcontract(project)
+
+      subcontract_summaries =
+        Enum.map(subcontracts, fn subcontract ->
+          contracted_amount = subcontract.current_contract_amount
+          estimated_amount = Map.get(estimates_by_subcontract, subcontract.id, zero())
+          payable_amount = payable_amount_for(project, subcontract)
+
+          %{
+            subcontract: subcontract,
+            contracted_amount: contracted_amount,
+            payable_amount: payable_amount,
+            estimated_amount: estimated_amount,
+            balance: Decimal.sub(contracted_amount, estimated_amount)
+          }
+        end)
+
+      totals =
+        Enum.reduce(
+          subcontract_summaries,
+          %{
+            contracted_amount: zero(),
+            payable_amount: zero(),
+            estimated_amount: zero(),
+            balance: zero()
+          },
+          fn summary, totals ->
+            %{
+              contracted_amount: Decimal.add(totals.contracted_amount, summary.contracted_amount),
+              payable_amount: Decimal.add(totals.payable_amount, summary.payable_amount),
+              estimated_amount: Decimal.add(totals.estimated_amount, summary.estimated_amount),
+              balance: Decimal.add(totals.balance, summary.balance)
+            }
+          end
+        )
+
+      {:ok,
+       %{
+         approved_budget: approved_budget,
+         totals: totals,
+         subcontracts: subcontract_summaries
+       }}
+    else
+      false -> {:error, :unauthorized}
     end
   end
 
@@ -400,6 +452,58 @@ defmodule Civora.Subcontracts do
     end
   end
 
+  defp approved_budget_summary(%Project{} = project) do
+    Repo.one(
+      from(b in ProjectBudget,
+        where: b.project_id == ^project.id and b.status == :approved,
+        left_join: line in assoc(b, :lines),
+        group_by: [b.id, b.approved_at],
+        select: %{id: b.id, approved_at: b.approved_at, line_count: count(line.id)}
+      )
+    )
+  end
+
+  defp project_subcontracts_with_work_items(%Project{} = project) do
+    Repo.all(
+      from(s in Subcontract,
+        where: s.project_id == ^project.id,
+        preload: [:counterparty, :work_items],
+        order_by: [asc: s.name, asc: s.id]
+      )
+    )
+  end
+
+  defp estimates_by_subcontract(%Project{} = project) do
+    from(e in SubcontractEstimate,
+      where: e.project_id == ^project.id,
+      group_by: e.subcontract_id,
+      select: {e.subcontract_id, coalesce(sum(e.amount), 0)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp payable_amount_for(%Project{} = project, %Subcontract{} = subcontract) do
+    work_item_ids = Enum.map(subcontract.work_items, & &1.id)
+
+    accepted_quantity =
+      if work_item_ids == [] do
+        zero()
+      else
+        Repo.one(
+          from(c in QualityControl,
+            where:
+              c.project_id == ^project.id and c.work_item_id in ^work_item_ids and
+                c.accepted_quantity > 0,
+            select: coalesce(sum(c.accepted_quantity), 0)
+          )
+        )
+      end
+
+    accepted_quantity
+    |> line_amount(unit_price_for(subcontract.work_items, subcontract))
+  end
+
   defp estimated_amount_for(%Subcontract{} = subcontract) do
     estimated_amount_for(Repo, subcontract)
   end
@@ -477,6 +581,8 @@ defmodule Civora.Subcontracts do
       Decimal.add(total, attrs.amount)
     end)
   end
+
+  defp zero, do: Decimal.new("0.0000")
 
   defp fetch_attr(attrs, key) do
     Map.get(attrs, key) || Map.get(attrs, to_string(key))
