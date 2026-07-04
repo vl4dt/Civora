@@ -51,6 +51,19 @@ gratuita; si se cambia a un plan pagado, las migraciones deben moverse a
 8. Crear usuarios internos de prueba y cargar o crear el dataset piloto antes
    de entregar el enlace al validador final.
 
+## Dataset piloto
+
+RS-36 provee un loader idempotente para staging. Despues de desplegar una
+version que lo incluya, abrir una Shell del servicio `civora-staging` en Render
+y ejecutar:
+
+```bash
+_build/prod/rel/civora/bin/civora eval "Civora.Release.seed_pilot_dataset()"
+```
+
+El detalle del contenido, usuarios y limitacion de evidencia con fallback local
+esta en `docs/PILOT_DATASET.md`.
+
 El plan gratuito de PostgreSQL es apropiado solo para staging temporal. Render
 elimina estas bases despues de su periodo de vigencia, por lo que staging debe
 usar datos descartables y recreables.

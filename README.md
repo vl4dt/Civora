@@ -88,6 +88,9 @@ El control de calidad basico que acepta o rechaza avance ejecutado esta document
 Las no conformidades simples asociadas a partidas o controles de calidad estan
 documentadas en `docs/NON_CONFORMITIES.md`.
 
+El dataset piloto simulado del MVP y sus comandos de carga local/staging estan
+documentados en `docs/PILOT_DATASET.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.
