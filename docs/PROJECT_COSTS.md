@@ -13,3 +13,5 @@ RS-33 agrega una vista basica de costo del proyecto basada en subcontratos y est
 ## Acceso
 
 Todos los miembros asignados al proyecto pueden consultar la vista de costo. RS-33 no agrega aprobaciones financieras ni cierres mensuales.
+
+RS-35 reutiliza estos totales dentro del reporte interno basico del MVP. Ver `docs/INTERNAL_REPORT.md`.
