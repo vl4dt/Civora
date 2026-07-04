@@ -21,14 +21,6 @@ services:
         value: 29.0.2
       - key: POOL_SIZE
         value: 5
-      - key: R2_ENDPOINT
-        sync: false
-      - key: R2_BUCKET
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
 
 databases:
   - name: civora-staging-db

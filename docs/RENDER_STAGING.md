@@ -14,13 +14,15 @@ un servicio web Phoenix y una base PostgreSQL 16 administrada en la misma region
 | `POOL_SIZE` | `5` | Limita conexiones del servicio de staging. |
 | `RENDER_EXTERNAL_HOSTNAME` | Proporcionada por Render | Configura el host publico de Phoenix. |
 | `PORT` | Proporcionada por Render | Puerto HTTP donde escucha Phoenix. |
-| `R2_ENDPOINT` | Definida en Render | Endpoint S3 de Cloudflare R2. |
-| `R2_BUCKET` | Definida en Render | Bucket privado de staging. |
-| `R2_ACCESS_KEY_ID` | Definida en Render | Identificador del token R2. |
-| `R2_SECRET_ACCESS_KEY` | Definida en Render | Secreto del token R2. |
 
 `PHX_HOST` puede definirse manualmente para usar un dominio personalizado. Si
 existe, tiene prioridad sobre `RENDER_EXTERNAL_HOSTNAME`.
+
+R2 queda diferido para RS-37. Mientras las variables `R2_ENDPOINT`,
+`R2_BUCKET`, `R2_ACCESS_KEY_ID` y `R2_SECRET_ACCESS_KEY` no existan en Render,
+la aplicacion usa almacenamiento local temporal. Esto permite validar la carga,
+metadatos, relaciones, restricciones e auditoria de evidencia, pero no valida
+retencion durable de binarios entre reinicios o redeploys.
 
 ## Comandos de despliegue
 
@@ -46,6 +48,8 @@ gratuita; si se cambia a un plan pagado, las migraciones deben moverse a
 5. Revisar los recursos `civora-staging` y `civora-staging-db`.
 6. Aplicar el Blueprint y esperar a que el despliegue quede `Live`.
 7. Abrir la URL del servicio y verificar que `/` y `/health` respondan `200`.
+8. Crear usuarios internos de prueba y cargar o crear el dataset piloto antes
+   de entregar el enlace al validador final.
 
 El plan gratuito de PostgreSQL es apropiado solo para staging temporal. Render
 elimina estas bases despues de su periodo de vigencia, por lo que staging debe
