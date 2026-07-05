@@ -91,6 +91,10 @@ documentadas en `docs/NON_CONFORMITIES.md`.
 El dataset piloto simulado del MVP y sus comandos de carga local/staging estan
 documentados en `docs/PILOT_DATASET.md`.
 
+El manual de usuario MVP para la validacion end-user esta en
+`docs/USER_MANUAL_MVP.md`. El guion operativo de RS-37 esta en
+`docs/RS37_VALIDATION_PLAN.md`.
+
 ## Documentacion inicial
 
 - `PRD.md`: definicion inicial del producto, alcance V1/V2, historias de usuario y decisiones funcionales.

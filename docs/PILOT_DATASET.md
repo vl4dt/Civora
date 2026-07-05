@@ -65,3 +65,6 @@ _build/prod/rel/civora/bin/civora eval "Civora.Release.seed_pilot_dataset()"
 El comando puede repetirse si staging se recrea o si el primer intento queda
 interrumpido antes de completar el dataset. No marca RS-37 listo por si solo;
 RS-37 debe ejecutarse despues de confirmar que staging contiene este dataset.
+
+Para la validacion end-user, usar el manual `docs/USER_MANUAL_MVP.md` y el
+guion de ejecucion `docs/RS37_VALIDATION_PLAN.md`.
